@@ -253,7 +253,7 @@ export function exampleConfig(): SyncConfig {
   return {
     season: currentSeason(),
     dataDir: DEFAULT_DATA_DIR,
-    scope: { leagues: [4811], teams: [] },
+    scope: { clubs: ["<club name>"], categories: ["Benjamí"] },
     levels: { games: true, actas: false },
     refresh: { games: "24h" },
     limits: { maxRequestsPerRun: DEFAULT_MAX_REQUESTS_PER_RUN, delayMs: DEFAULT_SYNC_DELAY_MS },

@@ -44,7 +44,8 @@ test('init without a config file writes a template and makes no request', async 
   const result = await run(['init'], dir);
   assert.equal(result.code, 0);
   const config = JSON.parse(readFileSync(path.join(dir, 'fecapa-sync.config.json'), 'utf8'));
-  assert.deepEqual(config.scope.leagues, [4811]);
+  assert.deepEqual(config.scope, { clubs: ['<club name>'], categories: ['Benjamí'] });
+  assert.match(result.stdout, /find "<name>" --live/);
   assert.equal(config.token, null);
   assert.equal(existsSync(path.join(dir, 'fecapa-data')), false);
 });
