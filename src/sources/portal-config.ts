@@ -1,9 +1,9 @@
 import { isFecapaError } from "../errors.js";
 import { formatChanged } from "../parsers/common.js";
-import { apiBaseFromConfig, extractSidgadConfig, sidgadUrl } from "../parsers/portal-config.js";
-import { parseCalendarJson, parseReportOutcomeJson } from "../parsers/sidgad-json.js";
-import type { CalendarSource, ReportSource, SourceContext } from "./types.js";
-import { calendarPageUrl, reportPageUrl, sidgadHeaders } from "./types.js";
+import { apiBaseFromConfig, extractSidgadConfig, modalityOf, sidgadUrl } from "../parsers/portal-config.js";
+import { parseCalendarJson, parseClubsJson, parseLeaguesJson, parseReportOutcomeJson } from "../parsers/sidgad-json.js";
+import type { CalendarSource, DirectorySource, ReportSource, SourceContext } from "./types.js";
+import { calendarPageUrl, homePageUrl, reportPageUrl, sidgadHeaders } from "./types.js";
 
 const NAME = "portal-config" as const;
 const CACHE_KEY = "portal-config";
@@ -55,5 +55,18 @@ export const portalConfigReport: ReportSource = {
       const url = sidgadUrl(apiBase, "report", request.matchId, token);
       return parseReportOutcomeJson(await ctx.http.getJson(url, NAME, sidgadHeaders(ctx)), request, NAME);
     });
+  },
+};
+
+export const portalConfigDirectory: DirectorySource = {
+  name: NAME,
+  canRun: () => true,
+  getLeagues(ctx) {
+    return withConfig(homePageUrl(ctx.baseUrl), ctx, async ({ apiBase, token }) =>
+      parseLeaguesJson(await ctx.http.getJson(sidgadUrl(apiBase, "leagues", null, token), NAME, sidgadHeaders(ctx)), NAME));
+  },
+  getClubs(ctx) {
+    return withConfig(homePageUrl(ctx.baseUrl), ctx, async ({ apiBase, token }) =>
+      parseClubsJson(await ctx.http.getJson(sidgadUrl(apiBase, "clubs", null, token), NAME, sidgadHeaders(ctx)), NAME, modalityOf(apiBase)));
   },
 };

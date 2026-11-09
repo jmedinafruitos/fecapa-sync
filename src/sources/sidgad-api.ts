@@ -1,6 +1,6 @@
-import { sidgadUrl } from "../parsers/portal-config.js";
-import { parseCalendarJson, parseReportOutcomeJson } from "../parsers/sidgad-json.js";
-import type { CalendarSource, ReportSource } from "./types.js";
+import { modalityOf, sidgadUrl } from "../parsers/portal-config.js";
+import { parseCalendarJson, parseClubsJson, parseLeaguesJson, parseReportOutcomeJson } from "../parsers/sidgad-json.js";
+import type { CalendarSource, DirectorySource, ReportSource } from "./types.js";
 import { sidgadHeaders } from "./types.js";
 
 const NAME = "sidgad-api" as const;
@@ -21,5 +21,17 @@ export const sidgadApiReport: ReportSource = {
   async getReport(request, ctx) {
     const url = sidgadUrl(ctx.apiUrl, "report", request.matchId, ctx.token!);
     return parseReportOutcomeJson(await ctx.http.getJson(url, NAME, sidgadHeaders(ctx)), request, NAME);
+  },
+};
+
+export const sidgadApiDirectory: DirectorySource = {
+  name: NAME,
+  canRun: (ctx) => Boolean(ctx.token),
+  async getLeagues(ctx) {
+    return parseLeaguesJson(await ctx.http.getJson(sidgadUrl(ctx.apiUrl, "leagues", null, ctx.token!), NAME, sidgadHeaders(ctx)), NAME);
+  },
+  async getClubs(ctx) {
+    const json = await ctx.http.getJson(sidgadUrl(ctx.apiUrl, "clubs", null, ctx.token!), NAME, sidgadHeaders(ctx));
+    return parseClubsJson(json, NAME, modalityOf(ctx.apiUrl));
   },
 };

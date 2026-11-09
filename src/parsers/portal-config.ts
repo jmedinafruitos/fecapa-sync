@@ -40,9 +40,14 @@ export function apiBaseFromConfig(config: SidgadConfig): string {
   return url.toString().replace(/\/$/, "");
 }
 
-/** `{apiBase}/{resource}/?id=…&jwt=…` */
-export function sidgadUrl(apiBase: string, resource: "calendar" | "report", id: number, token: string): string {
+/** `{apiBase}/{resource}/?id=…&jwt=…`, or `{apiBase}/{resource}/?jwt=…` for list resources without an id. */
+export function sidgadUrl(apiBase: string, resource: "calendar" | "report" | "leagues" | "clubs", id: number | null, token: string): string {
   const url = new URL(`${apiBase.replace(/\/$/, "")}/${resource}/`);
-  url.search = new URLSearchParams({ id: String(id), jwt: token }).toString();
+  url.search = new URLSearchParams(id === null ? { jwt: token } : { id: String(id), jwt: token }).toString();
   return url.toString();
+}
+
+/** The modality segment of an API base (`hp` in `…/fecapa/v1/hp`). */
+export function modalityOf(apiBase: string): string {
+  return new URL(apiBase).pathname.replace(/\/+$/, "").split("/").pop() ?? "";
 }

@@ -2,10 +2,10 @@ import { FecapaError, type SourceAttempt } from "./errors.js";
 import { HttpClient, type FetchLike } from "./http.js";
 import { toSideReport, type FullReportRequest } from "./parsers/sidgad-json.js";
 import { legacyHtmlCalendar, legacyHtmlReport } from "./sources/legacy-html.js";
-import { portalConfigCalendar, portalConfigReport } from "./sources/portal-config.js";
-import { sidgadApiCalendar, sidgadApiReport } from "./sources/sidgad-api.js";
-import type { CalendarSource, ReportSource, SourceContext } from "./sources/types.js";
-import { SOURCE_NAMES, type CalendarResult, type ExpectTeams, type FullReportResult, type ReportResult, type Side, type SourceName } from "./types.js";
+import { portalConfigCalendar, portalConfigDirectory, portalConfigReport } from "./sources/portal-config.js";
+import { sidgadApiCalendar, sidgadApiDirectory, sidgadApiReport } from "./sources/sidgad-api.js";
+import type { CalendarSource, DirectorySource, ReportSource, SourceContext } from "./sources/types.js";
+import { SOURCE_NAMES, type CalendarResult, type ClubsResult, type ExpectTeams, type FullReportResult, type LeaguesResult, type ReportResult, type Side, type SourceName } from "./types.js";
 import { DEFAULT_USER_AGENT } from "./version.js";
 
 export const DEFAULT_BASE_URL = "https://www.hoqueipatins.fecapa.cat";
@@ -52,12 +52,26 @@ export type FecapaClient = {
   getReport(matchId: number, options: GetReportOptions): Promise<ReportResult>;
   /** Both lineups of a match report, in one request. `report` is `null` unless `status` is `"final"`. */
   getFullReport(matchId: number, options: GetFullReportOptions): Promise<FullReportResult>;
+  /**
+   * Every competition of every season, with SIDGAD's category, sex label,
+   * zone and teams (with club ids). One request (about 2.5 MB). JSON sources
+   * only: `legacy-html` has no such list.
+   */
+  getLeagues(): Promise<LeaguesResult>;
+  /** Clubs of this modality with their official names. One request. JSON sources only. */
+  getClubs(): Promise<ClubsResult>;
 };
 
 const CALENDAR_SOURCES: Record<SourceName, CalendarSource> = {
   "sidgad-api": sidgadApiCalendar,
   "portal-config": portalConfigCalendar,
   "legacy-html": legacyHtmlCalendar,
+};
+
+// legacy-html has no list of leagues or clubs.
+const DIRECTORY_SOURCES: Partial<Record<SourceName, DirectorySource>> = {
+  "sidgad-api": sidgadApiDirectory,
+  "portal-config": portalConfigDirectory,
 };
 
 const REPORT_SOURCES: Record<SourceName, ReportSource> = {
@@ -115,14 +129,14 @@ export function createClient(options: ClientOptions = {}): FecapaClient {
     return ctx;
   };
 
-  async function run<S extends CalendarSource | ReportSource, T>(
-    registry: Record<SourceName, S>, call: (source: S, ctx: SourceContext) => Promise<T>,
+  async function run<S extends CalendarSource | ReportSource | DirectorySource, T>(
+    registry: Partial<Record<SourceName, S>>, call: (source: S, ctx: SourceContext) => Promise<T>,
   ): Promise<{ source: SourceName; value: T }> {
     const ctx = newContext();
     const attempts: SourceAttempt[] = [];
     for (const name of sources) {
       const source = registry[name];
-      if (!source.canRun(ctx)) continue;
+      if (!source?.canRun(ctx)) continue;
       try {
         return { source: name, value: await call(source, ctx) };
       } catch (error) {
@@ -133,7 +147,7 @@ export function createClient(options: ClientOptions = {}): FecapaClient {
       }
     }
     if (!attempts.length) {
-      throw new FecapaError("NO_SOURCE_AVAILABLE", "No configured source can run (sidgad-api needs a token)", { attempts });
+      throw new FecapaError("NO_SOURCE_AVAILABLE", "No configured source can run (sidgad-api needs a token; legacy-html has no league or club list)", { attempts });
     }
     if (attempts.length === 1) throw attempts[0]!.error;
     const summary = attempts.map((attempt) => `${attempt.source}: ${attempt.error.code}`).join("; ");
@@ -169,6 +183,14 @@ export function createClient(options: ClientOptions = {}): FecapaClient {
       const request = fullRequest(matchId, opts);
       const { source, value } = await run(REPORT_SOURCES, (s, ctx) => s.getReport(request, ctx));
       return value.status === "final" ? { source, status: "final", report: value.report } : { source, status: value.status, report: null };
+    },
+    async getLeagues() {
+      const { source, value } = await run(DIRECTORY_SOURCES, (s, ctx) => s.getLeagues(ctx));
+      return { source, leagues: value };
+    },
+    async getClubs() {
+      const { source, value } = await run(DIRECTORY_SOURCES, (s, ctx) => s.getClubs(ctx));
+      return { source, clubs: value };
     },
   };
 }

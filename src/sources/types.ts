@@ -1,6 +1,6 @@
 import type { HttpClient } from "../http.js";
 import type { FullReportRequest, ReportOutcome } from "../parsers/sidgad-json.js";
-import type { Match, SourceName } from "../types.js";
+import type { ClubInfo, LeagueInfo, Match, SourceName } from "../types.js";
 
 /** Everything a source needs for one client operation. */
 export type SourceContext = {
@@ -32,6 +32,17 @@ export interface ReportSource {
   /** Both lineups of a final report, or why there is none yet. */
   getReport(request: FullReportRequest, ctx: SourceContext): Promise<ReportOutcome>;
 }
+
+/** Lists that aren't tied to one competition: leagues (with teams) and clubs. JSON sources only. */
+export interface DirectorySource {
+  readonly name: SourceName;
+  canRun(ctx: SourceContext): boolean;
+  getLeagues(ctx: SourceContext): Promise<LeagueInfo[]>;
+  getClubs(ctx: SourceContext): Promise<ClubInfo[]>;
+}
+
+/** The portal's competitions page (it lists every league; it also embeds the public API config). */
+export const homePageUrl = (baseUrl: string) => `${baseUrl}/`;
 
 export const calendarPageUrl = (baseUrl: string, competitionId: number) =>
   `${baseUrl}/?liga=${competitionId}&vista=calendar`;

@@ -106,12 +106,51 @@ export type FullReportResult =
   | { source: SourceName; status: "not-finished" | "no-file"; report: null };
 
 /**
- * Reserved for the `teams` level (0.3); nothing sets it in 0.2. FECAPA has no
- * gender field. The only rule: a team in a `FEM…` category, or in a league
- * whose name contains "Femenina", is a women's team. Everything else is
- * `"unknown"`, because youth leagues can be mixed.
+ * FECAPA records no gender for teams or players. The only rule: a team in a
+ * `FEM…` category, or in a league or group whose name contains "Femenina", is
+ * a women's team. Everything else is `"unknown"` (never "male"), because youth
+ * leagues can be mixed.
  */
 export type Gender = "female" | "unknown";
 
-/** Reserved field shape for team records (0.3). */
+/** How leagues, groups, categories and teams carry their gender. Always inferred. */
 export type GenderInfo = { gender: Gender; genderSource: "inferred" };
+
+/** A team as listed in a league by the SIDGAD `leagues` endpoint. */
+export type TeamInfo = {
+  /** Team id (`home_id`/`away_id` in calendars). */
+  id: number;
+  name: string;
+  /** Three-letter abbreviation, or null. */
+  shortName: string | null;
+  /** Federation club id, or null when the team has none. */
+  clubId: number | null;
+};
+
+/** A competition (league) as listed by the SIDGAD `leagues` endpoint. */
+export type LeagueInfo = {
+  /** Competition id (`idc`, `liga` in the portal URL). */
+  id: number;
+  name: string;
+  /** SIDGAD season id and name (`"2026/2027"`). */
+  seasonId: number | null;
+  season: string | null;
+  /** Territorial zone (e.g. a province), or null. */
+  zoneId: number | null;
+  zoneName: string | null;
+  /** SIDGAD's own category, or null when the competition has none (`id_categoria` "0"). */
+  categoryId: number | null;
+  categoryName: string | null;
+  /** SIDGAD's sex label (`"MIXTA"`, `"MASCULINA"`, `"FEMENINA"`), or null. Raw; see `Gender`. */
+  sexName: string | null;
+  /** SIDGAD's `agrupada` flag. */
+  grouped: boolean;
+  teams: TeamInfo[];
+};
+
+/** A club as listed by the SIDGAD `clubs` endpoint. */
+export type ClubInfo = { id: number; name: string };
+
+export type LeaguesResult = { source: SourceName; leagues: LeagueInfo[] };
+
+export type ClubsResult = { source: SourceName; clubs: ClubInfo[] };

@@ -1,0 +1,52 @@
+{
+ "clubes": [
+  {
+   "id_club": "9001",
+   "modals": "hp",
+   "nameclub": "PROVA, C.P.",
+   "logoclub": "https://sidgad.example/logos_clubes/9001.png"
+  },
+  {
+   "id_club": "9002",
+   "modals": "hp",
+   "nameclub": "FICTICI, C.H.",
+   "logoclub": "https://sidgad.example/logos_clubes/9002.png"
+  },
+  {
+   "id_club": "9003",
+   "modals": "hp,hl",
+   "nameclub": "IMAGINARI, CLUB",
+   "logoclub": "https://sidgad.example/logos_clubes/9003.png"
+  },
+  {
+   "id_club": "9004",
+   "modals": "3p,hp",
+   "nameclub": "INVENTAT, PATIN",
+   "logoclub": "https://sidgad.example/logos_clubes/9004.png"
+  },
+  {
+   "id_club": "9005",
+   "modals": "hp",
+   "nameclub": "PROVA SANTS, C.P.",
+   "logoclub": "https://sidgad.example/logos_clubes/9005.png"
+  },
+  {
+   "id_club": "9006",
+   "modals": "hl",
+   "nameclub": "ALTRA MODALITAT, C.H.",
+   "logoclub": ""
+  },
+  {
+   "id_club": "9007",
+   "modals": "3p",
+   "nameclub": "PERSONA INVENTADA",
+   "logoclub": ""
+  },
+  {
+   "id_club": "9008",
+   "modals": "",
+   "nameclub": "SENSE MODALITAT",
+   "logoclub": ""
+  }
+ ]
+}

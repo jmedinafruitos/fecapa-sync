@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { FecapaError } from "../errors.js";
-import type { ExpectTeams, FullReport, Match, Participant, Report, Side, SourceName } from "../types.js";
+import type { ClubInfo, ExpectTeams, FullReport, LeagueInfo, Match, Participant, Report, Side, SourceName, TeamInfo } from "../types.js";
 import { buildMatch, checkDuplicates, checkLineup, checkTeams, clean, formatChanged, fromSpanishDate, incompletePlayer, optionalText, TIME_RE } from "./common.js";
 
 // Only the fields we read are declared. Unknown fields are ignored, so SIDGAD
@@ -235,4 +235,99 @@ export function toSideReport(report: FullReport, side: Side, source: SourceName)
 export function parseReportJson(input: unknown, request: ReportRequest, source: SourceName): Report | null {
   const outcome = parseReportOutcomeJson(input, request, source);
   return outcome.status === "final" ? toSideReport(outcome.report, request.side, source) : null;
+}
+
+const optionalId = z.union([z.string(), z.number()]).nullish();
+
+export const leaguesSchema = z.object({
+  idcs: z.array(z.object({
+    idc: idValue,
+    nombre_idc: z.string(),
+    id_temp: optionalId,
+    nombre_temp: z.string().nullish(),
+    id_zone: optionalId,
+    zone_name: z.string().nullish(),
+    id_categoria: optionalId,
+    nombre_categoria: z.string().nullish(),
+    nombre_sexo: z.string().nullish(),
+    agrupada: z.union([z.boolean(), z.string(), z.number()]).nullish(),
+    teams: z.array(z.object({
+      teamId: idValue,
+      name: z.string(),
+      clubId: optionalId,
+      name_short: z.string().nullish(),
+    })).nullish(),
+  })),
+});
+
+export const clubsSchema = z.object({
+  clubes: z.array(z.object({
+    id_club: idValue,
+    nameclub: z.string().nullish(),
+    modals: z.string().nullish(),
+  })),
+});
+
+/** A positive id, or null for empty/"0" values. Anything else is a format change. */
+function nullableId(value: unknown, source: SourceName, field: string): number | null {
+  if (value === null || value === undefined) return null;
+  const text = clean(String(value));
+  if (text === "" || text === "0") return null;
+  if (!DIGITS.test(text)) throw formatChanged(source, `${field} "${text}" is not an id`);
+  return Number(text);
+}
+
+function requiredId(value: unknown, source: SourceName, field: string): number {
+  const id = nullableId(value, source, field);
+  if (id === null) throw formatChanged(source, `${field} is missing`);
+  return id;
+}
+
+/**
+ * Maps the SIDGAD `leagues` list: every competition of every season, with its
+ * SIDGAD category, sex label, zone and teams (with their club ids).
+ */
+export function parseLeaguesJson(input: unknown, source: SourceName): LeagueInfo[] {
+  const { idcs } = validate(leaguesSchema, input, source, "idcs");
+  return idcs.map((row) => {
+    const teams: TeamInfo[] = [];
+    const seen = new Set<number>();
+    for (const team of row.teams ?? []) {
+      const id = requiredId(team.teamId, source, "teams.teamId");
+      const name = clean(team.name);
+      if (!name || seen.has(id)) continue;
+      seen.add(id);
+      teams.push({ id, name, shortName: optionalText(team.name_short), clubId: nullableId(team.clubId, source, "teams.clubId") });
+    }
+    return {
+      id: requiredId(row.idc, source, "idc"),
+      name: clean(row.nombre_idc),
+      seasonId: nullableId(row.id_temp, source, "id_temp"),
+      season: optionalText(row.nombre_temp),
+      zoneId: nullableId(row.id_zone, source, "id_zone"),
+      zoneName: optionalText(row.zone_name),
+      categoryId: nullableId(row.id_categoria, source, "id_categoria"),
+      categoryName: nullableId(row.id_categoria, source, "id_categoria") === null ? null : optionalText(row.nombre_categoria),
+      sexName: optionalText(row.nombre_sexo),
+      grouped: row.agrupada === true || row.agrupada === "true" || row.agrupada === 1 || row.agrupada === "1",
+      teams,
+    };
+  });
+}
+
+/**
+ * Maps the SIDGAD `clubs` list, keeping only entries of `modality` (e.g.
+ * `"hp"`). The list is shared by every modality of the federation and also
+ * holds individual athletes of other modalities; those are never returned.
+ */
+export function parseClubsJson(input: unknown, source: SourceName, modality: string): ClubInfo[] {
+  const { clubes } = validate(clubsSchema, input, source, "clubes");
+  const clubs: ClubInfo[] = [];
+  for (const row of clubes) {
+    const modalities = (row.modals ?? "").split(",").map((value) => value.trim());
+    if (!modalities.includes(modality)) continue;
+    const name = optionalText(row.nameclub);
+    if (name) clubs.push({ id: requiredId(row.id_club, source, "id_club"), name });
+  }
+  return clubs;
 }
