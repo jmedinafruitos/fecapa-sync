@@ -249,7 +249,8 @@ async function runExport(args: Args, configPath: string, out: (text: string) => 
   for (const key of ["team", "club", "category", "league"] as const) if (args[key] !== undefined) filters[key] = args[key];
   const result = await createSync({ configPath }).export({ level: args.level!, format: args.format, ...filters });
   const what = `${result.records} ${args.format === "csv" && args.level === "actas" ? "lineup rows" : args.level}`;
-  const skipped = result.skipped ? ` (${result.skipped} without a date skipped)` : "";
+  const reasons = [result.skippedNoDate ? `${result.skippedNoDate} without a date` : "", result.skippedNoTime ? `${result.skippedNoTime} without a time` : ""].filter(Boolean);
+  const skipped = reasons.length ? ` (skipped: ${reasons.join(", ")})` : "";
   const notes = result.notes.filter((note) => !note.endsWith("skipped")).map((note) => `\n  ${note}`).join("");
   if (args.out) {
     const file = path.resolve(args.out);

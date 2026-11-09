@@ -38,8 +38,12 @@ export type ExportResult = {
   content: string;
   /** Records exported: games, actas (CSV: lineup rows), players, teams, clubs or leagues. */
   records: number;
-  /** ICS only: games without a date, which can't be calendar events. */
+  /** ICS only: games left out because they have no date or no time yet (`skippedNoDate + skippedNoTime`). */
   skipped: number;
+  /** ICS only: games left out because they have no date yet. */
+  skippedNoDate: number;
+  /** ICS only: games left out because they have a date but no published time yet. */
+  skippedNoTime: number;
   /** What the filters resolved to. */
   notes: string[];
 };
@@ -199,8 +203,8 @@ export function exportSnapshot(store: StoreSnapshot, options: ExportOptions): Ex
   }
   const { directory } = store;
   const filters = resolveFilters(options, directory, store.season);
-  const result = (content: string, records: number, skipped = 0): ExportResult => ({
-    level: options.level, format, content, records, skipped, notes: filters.notes,
+  const result = (content: string, records: number, noDate = 0, noTime = 0): ExportResult => ({
+    level: options.level, format, content, records, skipped: noDate + noTime, skippedNoDate: noDate, skippedNoTime: noTime, notes: filters.notes,
   });
   const leagueName = (id: number) => directory.leagues[id]?.name ?? null;
   const categoryLeagues = leaguesInCategory(directory, filters.category);
@@ -218,8 +222,9 @@ export function exportSnapshot(store: StoreSnapshot, options: ExportOptions): Ex
             return { leagueName: leagueName(game.competitionId), venue: report?.venue ?? null, score: report ? { home: report.homeScore, away: report.awayScore } : null };
           },
         });
-        if (ics.skipped) filters.notes.push(`${ics.skipped} game(s) without a date skipped`);
-        return result(ics.content, ics.events, ics.skipped);
+        if (ics.noDate) filters.notes.push(`${ics.noDate} game(s) without a date skipped`);
+        if (ics.noTime) filters.notes.push(`${ics.noTime} game(s) without a time skipped`);
+        return result(ics.content, ics.events, ics.noDate, ics.noTime);
       }
       if (format === "json") return result(json(games), games.length);
       return result(toCsv(CSV_COLUMNS.games, games.map((game) => {

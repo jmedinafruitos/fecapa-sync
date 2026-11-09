@@ -16,7 +16,7 @@ TEAMS[900120] = 'CLUB "PROVA", SECCIÓ D\'HOQUEI; NOM MOLT LLARG AMB ACCENTS À�
 const NOW = '2026-11-09T12:00:00.000Z';
 const GAMES_4811 = [
   { id: 900501, date: '2026-11-01', time: '12:30', home: 900101, away: 900102 },
-  { id: 900502, date: '2026-11-14', home: 900101, away: 900103 }, // no time yet: all-day
+  { id: 900502, date: '2026-11-14', home: 900101, away: 900103 }, // no time yet: left out of ICS
   { id: 900503, date: null, home: 900104, away: 900101 }, // no date: skipped in ICS
   { id: 900504, date: '2026-11-21', time: '10:00', home: 900103, away: 900101 },
   { id: 900505, date: '2026-11-28', time: '18:00', home: 900101, away: 900120, venue: 'PISTA, "NOVA"' },
@@ -42,16 +42,19 @@ function setup() {
 const events = (calendar) => Object.fromEntries(calendar.events.map((event) => [event.props.UID.value, event.props]));
 const uid = (id, league = 4811) => `fecapa-${league}-${id}@fecapa-sync`;
 
-test('ICS: valid RFC 5545 with stable UIDs, UTC times, all-day events and skipped dateless games', async () => {
+test('ICS: valid RFC 5545 with stable UIDs and UTC times; games without a date or a time are skipped and counted', async () => {
   const { sync } = setup();
   await sync.init();
   const result = await sync.export({ level: 'games', format: 'ics' });
   const calendar = validateIcs(result.content);
-  assert.equal(result.records, 5);
-  assert.equal(result.skipped, 1);
+  assert.equal(result.records, 4);
+  assert.deepEqual([result.skipped, result.skippedNoDate, result.skippedNoTime], [2, 1, 1]);
   assert.ok(result.notes.includes('1 game(s) without a date skipped'));
+  assert.ok(result.notes.includes('1 game(s) without a time skipped'));
+  // No all-day events at all.
+  assert.doesNotMatch(result.content, /VALUE=DATE/);
   const byUid = events(calendar);
-  assert.deepEqual(Object.keys(byUid).sort(), [uid(900501), uid(900502), uid(900504), uid(900505), uid(900601, 4812)]);
+  assert.deepEqual(Object.keys(byUid).sort(), [uid(900501), uid(900504), uid(900505), uid(900601, 4812)]);
 
   const played = byUid[uid(900501)];
   assert.equal(played.DTSTART.value, '20261101T113000Z');
@@ -62,9 +65,10 @@ test('ICS: valid RFC 5545 with stable UIDs, UTC times, all-day events and skippe
   assert.match(played.DESCRIPTION.value, /BENJAMÍ PLATA BARCELONA · BCN BENJAMÍ PLATA 1\nJornada 1\nResultat: 3 - 2/);
   assert.deepEqual([played.SEQUENCE.value, played.STATUS.value], ['0', 'CONFIRMED']);
 
-  const allDay = byUid[uid(900502)];
-  assert.deepEqual([allDay.DTSTART.params.VALUE, allDay.DTSTART.value, allDay.DTEND.value], ['DATE', '20261114', '20261115']);
-  assert.equal(byUid[uid(900502)].LOCATION, undefined);
+  // JSON and CSV still include the game without a time, with an empty time.
+  const json = JSON.parse((await sync.export({ level: 'games' })).content);
+  assert.deepEqual(json.filter((game) => game.matchId === 900502).map((game) => [game.date, game.time]), [['2026-11-14', null]]);
+  assert.match((await sync.export({ level: 'games', format: 'csv' })).content, /\r\n900502,900502,4811,[^\r]*,2026-11-14,,2026-11-13T23:00:00\.000Z,/);
 
   // Escaping and folding of long values round-trip exactly.
   const long = byUid[uid(900505)];
@@ -75,6 +79,22 @@ test('ICS: valid RFC 5545 with stable UIDs, UTC times, all-day events and skippe
 
   // The same store exported again gives the same bytes; a later run keeps the UIDs.
   assert.equal((await sync.export({ level: 'games', format: 'ics' })).content, result.content);
+});
+
+test('ICS: a game without a time appears with its normal UID once a later sync brings the time', async () => {
+  const { sync, api, clock } = setup();
+  await sync.init();
+  assert.equal(events(validateIcs((await sync.export({ level: 'games', format: 'ics' })).content))[uid(900502)], undefined);
+  clock.advance(DAY);
+  api.calendars[4811] = calendarBody(GAMES_4811.map((game) => (game.id === 900502 ? { ...game, time: '11:00' } : game)),
+    { phaseId: 4951, phaseName: 'BCN BENJAMÍ PLATA 1' });
+  await sync.run();
+  const result = await sync.export({ level: 'games', format: 'ics' });
+  const event = events(validateIcs(result.content))[uid(900502)];
+  assert.equal(event.DTSTART.value, '20261114T100000Z');
+  // A first publication of the time is not a reschedule.
+  assert.equal(event.SEQUENCE.value, '1');
+  assert.deepEqual([result.skippedNoDate, result.skippedNoTime], [1, 0]);
 });
 
 test('ICS: SEQUENCE grows with each reschedule and removed games are exported as CANCELLED', async () => {
@@ -109,6 +129,8 @@ test('ICS writer: folding counts octets, never splits a character, and the valid
   assert.throws(() => validateIcs('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:x\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTAMP:20261101T000000Z\r\nDTSTART:20261101T000000Z\r\nSUMMARY:a, b\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'), /unescaped/);
   const game = { key: '1', competitionId: 1, date: null, startsAt: null };
   assert.deepEqual(gamesToIcs([game]).skipped, 1);
+  const noTime = gamesToIcs([{ ...game, date: '2026-11-14', time: null, startsAt: '2026-11-13T23:00:00.000Z' }]);
+  assert.deepEqual([noTime.events, noTime.noDate, noTime.noTime], [0, 0, 1]);
 });
 
 test('export filters take names (team, club, category, league) like the 0.3 discovery, or ids', async () => {
@@ -225,9 +247,9 @@ test('CLI export writes the file atomically, prints a summary and never needs th
   const out = path.join(tempDir(), 'team.ics');
   const ics = await run(['export', '--level', 'games', '--format', 'ics', '--team', 'CP Prova B', '--out', out]);
   assert.equal(ics.code, 0, ics.stderr);
-  assert.match(ics.stdout, /4 games → .*team\.ics \(1 without a date skipped\)/);
+  assert.match(ics.stdout, /3 games → .*team\.ics \(skipped: 1 without a date, 1 without a time\)/);
   assert.match(ics.stdout, /team → CP PROVA B \(900101\)/);
-  assert.equal(validateIcs(readFileSync(out, 'utf8')).events.length, 4);
+  assert.equal(validateIcs(readFileSync(out, 'utf8')).events.length, 3);
 
   const csv = await run(['export', '--level', 'players', '--format', 'csv', '--league', '4812']);
   assert.equal(csv.code, 0, csv.stderr);

@@ -34,13 +34,16 @@ export function foldLine(line: string): string {
 /** `2026-11-01T11:30:00.000Z` → `20261101T113000Z`. */
 const utcStamp = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 
-/** `2026-11-01` → `20261101`. */
-const dateValue = (date: string) => date.replace(/-/g, "");
-
-function nextDay(date: string): string {
-  const day = new Date(`${date}T00:00:00Z`);
-  day.setUTCDate(day.getUTCDate() + 1);
-  return day.toISOString().slice(0, 10);
+/**
+ * Why a game can't be a calendar event yet, or null when it can. A game
+ * without a date, or with a date but no published time, is left out (no
+ * all-day events); once a later sync brings the time it appears with its
+ * normal UID.
+ */
+export function icsSkipReason(game: Pick<GameRecord, "date" | "time" | "startsAt">): "no-date" | "no-time" | null {
+  if (game.date === null || game.startsAt === null) return "no-date";
+  if (game.time === null) return "no-time";
+  return null;
 }
 
 /** Extra per-game details the store knows beside the game record. */
@@ -65,17 +68,20 @@ export type IcsResult = {
   content: string;
   /** Events written (cancelled ones included). */
   events: number;
-  /** Games skipped because they have no date yet. */
+  /** Games left out: `noDate + noTime`. */
   skipped: number;
+  /** Games left out because they have no date yet. */
+  noDate: number;
+  /** Games left out because they have a date but no published time yet. */
+  noTime: number;
 };
 
 /** A stable UID for a game: its league and store key (the match id, or the fixture key for a game without one). */
 export const gameUid = (game: Pick<GameRecord, "competitionId" | "key">) => `fecapa-${game.competitionId}-${game.key.replace(/[^A-Za-z0-9-]/g, "-")}@fecapa-sync`;
 
 /**
- * An iCalendar (RFC 5545) feed of games. Times are UTC; a game without a
- * published time is an all-day event; a game without a date is skipped and
- * counted. `SEQUENCE` grows with the game's schedule history (and once more
+ * An iCalendar (RFC 5545) feed of games. Times are UTC. A game without a
+ * date or without a published time is left out and counted (`icsSkipReason`). `SEQUENCE` grows with the game's schedule history (and once more
  * when it leaves the calendar), so calendar apps apply reschedules; a removed
  * game is exported with `STATUS:CANCELLED` instead of being dropped.
  */
@@ -90,12 +96,13 @@ export function gamesToIcs(games: readonly GameRecord[], options: IcsOptions = {
     `X-WR-CALNAME:${escapeText(options.calendarName ?? "fecapa-sync")}`,
   ];
   let events = 0;
-  let skipped = 0;
+  let noDate = 0;
+  let noTime = 0;
   for (const game of games) {
-    if (game.date === null || game.startsAt === null) {
-      skipped++;
-      continue;
-    }
+    const skip = icsSkipReason(game);
+    if (skip === "no-date") noDate++;
+    if (skip === "no-time") noTime++;
+    if (skip !== null || game.startsAt === null) continue;
     const extra = options.extra?.(game) ?? {};
     const venue = game.venue ?? extra.venue ?? null;
     const description = [
@@ -110,12 +117,8 @@ export function gamesToIcs(games: readonly GameRecord[], options: IcsOptions = {
       `LAST-MODIFIED:${utcStamp(game.updatedAt)}`,
       `SEQUENCE:${game.history.length + (game.removedAt !== null ? 1 : 0)}`,
     );
-    if (game.time === null) {
-      lines.push(`DTSTART;VALUE=DATE:${dateValue(game.date)}`, `DTEND;VALUE=DATE:${dateValue(nextDay(game.date))}`, "TRANSP:TRANSPARENT");
-    } else {
-      const end = new Date(Date.parse(game.startsAt) + duration * 60_000).toISOString();
-      lines.push(`DTSTART:${utcStamp(game.startsAt)}`, `DTEND:${utcStamp(end)}`);
-    }
+    const end = new Date(Date.parse(game.startsAt) + duration * 60_000).toISOString();
+    lines.push(`DTSTART:${utcStamp(game.startsAt)}`, `DTEND:${utcStamp(end)}`);
     lines.push(`SUMMARY:${escapeText(`${game.homeName} - ${game.awayName}`)}`);
     if (venue) lines.push(`LOCATION:${escapeText(venue)}`);
     if (description) lines.push(`DESCRIPTION:${escapeText(description)}`);
@@ -123,5 +126,5 @@ export function gamesToIcs(games: readonly GameRecord[], options: IcsOptions = {
     events++;
   }
   lines.push("END:VCALENDAR");
-  return { content: lines.map(foldLine).join(""), events, skipped };
+  return { content: lines.map(foldLine).join(""), events, skipped: noDate + noTime, noDate, noTime };
 }

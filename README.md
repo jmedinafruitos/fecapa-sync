@@ -227,7 +227,7 @@ npx fecapa-sync export --level teams --format json --league 4811
 Nivells: `games`, `actas`, `players`, `teams`, `clubs`, `leagues`. Sense
 `--out` el resultat va a la sortida estàndard i el resum a la d'error. Des del
 codi: `await sync.export({ level: "games", format: "ics", club: "CP Exemple" })`
-retorna `{ content, records, skipped, notes }`.
+retorna `{ content, records, skipped, skippedNoDate, skippedNoTime, notes }`.
 
 **Calendari per subscriure-s'hi.** Executa l'export just després del `sync` al
 mateix cron i serveix el fitxer amb el teu servidor web (la llibreria no
@@ -238,11 +238,14 @@ veu mai mig.
 0 3 * * 1,4  cd /srv/app && npx fecapa-sync sync >> fecapa-sync.log 2>&1 && npx fecapa-sync export --level games --format ics --club "CP Exemple" --out /var/www/calendari/exemple.ics
 ```
 
-Cada partit té un `UID` estable; l'hora és en UTC i, si encara no hi ha hora,
-és un esdeveniment de dia sencer; `SEQUENCE` augmenta amb cada canvi de data,
-hora o pista, perquè les aplicacions de calendari l'actualitzin; un partit que
-desapareix del calendari surt com a `STATUS:CANCELLED`. Els partits sense data
-no s'hi poden posar: el resum diu quants n'hi ha. La pista és la del calendari
+Cada partit té un `UID` estable i l'hora en UTC; `SEQUENCE` augmenta amb cada
+canvi de data, hora o pista, perquè les aplicacions de calendari l'actualitzin;
+un partit que desapareix del calendari surt com a `STATUS:CANCELLED`. Els
+partits sense data, o amb data però encara sense hora, no s'hi posen (no hi ha
+esdeveniments de dia sencer): el resum diu quants n'han quedat fora per cada
+motiu. Quan una sincronització posterior porta l'hora, el partit apareix al
+següent export amb el seu `UID` de sempre. Els exports JSON i CSV sí que els
+inclouen, amb l'hora buida. La pista és la del calendari
 o, si no n'hi ha, la de l'acta; la descripció porta la lliga, la jornada i el
 resultat.
 
@@ -380,9 +383,12 @@ a stricter setting rewrites what is stored on the next run without a request.
 --format json|csv|ics [--team …] [--club …] [--category …] [--league …] [--out file]`,
 or `sync.export({ level, format, team, club, category, league })`, reads the
 local store only. Filters take ids or names (an ambiguous name fails with the
-candidates). ICS is for games: stable `UID`s, UTC times or all-day events when
-the time is unknown, `SEQUENCE` that grows with each reschedule, removed games
-as `STATUS:CANCELLED`, games without a date skipped and counted. For a
+candidates). ICS is for games: stable `UID`s, UTC times, `SEQUENCE` that grows
+with each reschedule, removed games as `STATUS:CANCELLED`. Games without a
+date, or with a date but no time yet, are left out (no all-day events) and
+counted separately (`skippedNoDate`, `skippedNoTime`); once a later sync brings
+the time, the game appears in the next export with its usual `UID`. JSON and
+CSV exports still include them, with an empty time. For a
 calendar subscription, run the export from the same cron job right after
 `sync` and serve the file with your own web server (the file is written
 atomically), e.g. `npx fecapa-sync sync && npx fecapa-sync export --level games

@@ -212,7 +212,7 @@ result.changes.games.updated;       // the changeset
 const status = await sync.status(); // last/next sync per level, pending actas, backoff (no network)
 await sync.listClubs();             // also listLeagues, listCategories, listTeams({ league, club, category }),
 await sync.findClub("exemple");     // findTeam: read the local store; STORE_EMPTY before init
-await sync.export({ level: "games", format: "ics", club: "CP Exemple" }); // local store only; { content, records, skipped, notes }
+await sync.export({ level: "games", format: "ics", club: "CP Exemple" }); // local store only; { content, records, skipped, skippedNoDate, skippedNoTime, notes }
 const live = await discover();      // live lists for choosing a scope before init (2–3 requests)
 ```
 
@@ -233,10 +233,12 @@ run holding the lock). It prints the setup notes only on `init`, when they
 changed since the last run, or with `--verbose` (`--json` always has them).
 
 ICS export (games only): `UID` from the league and the game's store key (match
-id, or the fixture key), `DTSTART` in UTC or an all-day event when the time
-isn't published, `SUMMARY` "Home - Away", `LOCATION` from the calendar or else
+id, or the fixture key), `DTSTART`/`DTEND` in UTC, `SUMMARY` "Home - Away", `LOCATION` from the calendar or else
 the acta, `SEQUENCE` = schedule history length (+1 once removed), removed games
-as `STATUS:CANCELLED`, games without a date skipped and counted. CRLF, folding
+as `STATUS:CANCELLED`. Games without a date, or with a date but no published
+time, are left out (no all-day events) and counted separately; once a sync
+brings the time they appear with their usual `UID`. JSON and CSV keep them,
+with an empty time. CRLF, folding
 at 75 octets, TEXT escaping. CSV: RFC 4180, header row, fixed column order
 (listed in the README).
 

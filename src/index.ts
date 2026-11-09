@@ -101,7 +101,7 @@ export {
   type StoreSnapshot,
 } from "./sync/export.js";
 export { csvField, toCsv, type CsvValue } from "./export/csv.js";
-export { escapeText, foldLine, gameUid, gamesToIcs, type IcsGameExtra, type IcsOptions, type IcsResult } from "./export/ics.js";
+export { escapeText, foldLine, gameUid, gamesToIcs, icsSkipReason, type IcsGameExtra, type IcsOptions, type IcsResult } from "./export/ics.js";
 export { type DirectoryView, type LeagueFilter, type TeamFilter } from "./sync/directory.js";
 export {
   clubNameFromTeams,
