@@ -42,6 +42,8 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 export type SourceAttempt = { source: SourceName; error: FecapaError };
 
 export type FecapaErrorContext = {
+  /** Retry-After delay in milliseconds, for the caller's persistent backoff. */
+  retryAfterMs?: number;
   source?: SourceName;
   status?: number | string;
   url?: string;
@@ -57,6 +59,7 @@ export type FecapaErrorContext = {
 };
 
 export class FecapaError extends Error {
+  declare readonly retryAfterMs?: number;
   readonly code: ErrorCode;
   declare readonly source?: SourceName;
   declare readonly status?: number | string;
