@@ -77,7 +77,17 @@ export {
   type ResolvedConfig,
   type SyncConfig,
 } from "./sync/config.js";
-export { ACTA_GRACE_MS, ACTA_MAX_ATTEMPTS, ACTA_MAX_RETRY_SPACING_MS, type ActaRecord, type PendingActa } from "./sync/actas.js";
+export { ACTA_GRACE_MS, ACTA_MAX_ATTEMPTS, ACTA_MAX_RETRY_SPACING_MS, type ActaRecord, type PendingActa, type StoredParticipant } from "./sync/actas.js";
+export {
+  initials,
+  NAME_MODES,
+  type NameMode,
+  type PlayerRecord,
+  type PlayersFile,
+  type PlayerStats,
+  type PlayerTeam,
+  type RosterFile,
+} from "./sync/players.js";
 export { discover, type DiscoverOptions, type Discovery } from "./sync/discover.js";
 export { type DirectoryView, type LeagueFilter, type TeamFilter } from "./sync/directory.js";
 export {

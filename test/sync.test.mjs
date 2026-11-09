@@ -75,7 +75,7 @@ test('a second run with nothing due makes 0 HTTP requests', async () => {
   assert.equal(result.requests, 0);
   assert.equal(result.status, 'ok');
   const none = { created: [], updated: [], removed: [] };
-  assert.deepEqual(result.changes, { leagues: none, categories: none, teams: none, clubs: none, games: none, actas: none });
+  assert.deepEqual(result.changes, { leagues: none, categories: none, teams: none, clubs: none, games: none, actas: none, players: none });
   // Status reads local files only.
   const status = await sync.status();
   assert.equal(api.calls.length, before);

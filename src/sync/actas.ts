@@ -1,9 +1,14 @@
-import type { FullReport, SourceName } from "../types.js";
+import type { FullReport, Participant, SourceName } from "../types.js";
 import { DAY_MS, HOUR_MS } from "./duration.js";
 import type { GameRecord } from "./games.js";
 
+/** A lineup entry as stored. `name` is null when `players.names` is `"none"`, initials when it is `"initials"`. */
+export type StoredParticipant = Omit<Participant, "name"> & { name: string | null };
+
 /** A final acta in the local store (`actas/<matchId>.json`). Never fetched again once stored. */
-export type ActaRecord = FullReport & {
+export type ActaRecord = Omit<FullReport, "home" | "away"> & {
+  home: StoredParticipant[];
+  away: StoredParticipant[];
   homeId: number;
   awayId: number;
   /** Kickoff of the game when the acta was fetched. */

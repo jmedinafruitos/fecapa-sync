@@ -13,6 +13,7 @@ import {
 import { formatDuration } from "./duration.js";
 import { acquireLock, listFiles, readJson, writeJsonAtomic } from "./fs.js";
 import { inTeamScope, mergeCalendar, type GameRecord, type GamesFile } from "./games.js";
+import { buildPlayers, scrubActa, scrubRoster, storedName, type PlayerRecord, type RosterFile } from "./players.js";
 import { resolveScope, type ResolvedScope } from "./resolve.js";
 import { backoffDelay, emptySeason, parseState, type Backoff, type LeagueState, type RunError, type RunSummary, type SyncState } from "./state.js";
 
@@ -26,7 +27,9 @@ export type Changeset = {
   teams: LevelChanges<TeamRecord>;
   clubs: LevelChanges<ClubRecord>;
   games: LevelChanges<GameRecord>;
+  /** Actas created this run; `updated` holds actas rewritten locally when `players.names` became stricter. */
   actas: LevelChanges<ActaRecord>;
+  players: LevelChanges<PlayerRecord>;
 };
 
 export type SyncResult = {
@@ -48,8 +51,10 @@ export type SyncResult = {
   error: RunError | null;
   /** Non-fatal problems, e.g. an acta that failed validation and will be retried. */
   warnings: string[];
-  /** Config adjustments (values raised to a floor, levels turned on as dependencies). */
+  /** Config adjustments (values raised to a floor, levels turned on as dependencies) and what the scope resolved to. */
   notes: string[];
+  /** Whether `notes` differ from the previous successful run's. The CLI prints notes only then (or on `init`, or with `--verbose`). */
+  notesChanged: boolean;
 };
 
 export type LeagueStatus = {
@@ -85,6 +90,14 @@ export type SyncStatus = {
   scope: { leagues: number[]; teams: number[]; error: string | null };
   games: { leagues: LeagueStatus[]; due: number };
   actas: { stored: number; pending: number; gaveUp: number; due: number; nextAttemptAt: string | null };
+  players: {
+    enabled: boolean;
+    stored: number;
+    removed: number;
+    names: "full" | "initials" | "none";
+    /** Roster requests: whether they are on, how many leagues are due now and the next due time. */
+    rosters: { enabled: boolean; due: number; nextDueAt: string | null };
+  };
   notes: string[];
 };
 
@@ -149,15 +162,23 @@ class Budget {
 
 const noChanges = () => ({ created: [], updated: [], removed: [] });
 const emptyChanges = (): Changeset => ({
-  leagues: noChanges(), categories: noChanges(), teams: noChanges(), clubs: noChanges(), games: noChanges(), actas: noChanges(),
+  leagues: noChanges(), categories: noChanges(), teams: noChanges(), clubs: noChanges(), games: noChanges(), actas: noChanges(), players: noChanges(),
 });
+
+/**
+ * Extra `state.json` fields of 0.4, kept beside the 0.2/0.3 ones (the state
+ * schema passes unknown fields through): roster due times per league, and the
+ * notes of the last successful run.
+ */
+type RosterSeasonState = { rosters?: { leagues: Record<string, LeagueState> } };
+type NotesState = { notes?: string[] };
 
 /** Discovery levels that come from the one `leagues` request. */
 const LIST_LEVELS = ["leagues", "categories", "teams"] as const;
 
 export const emptyDirectory = (): Directory => ({ leagues: {}, categories: {}, teams: {}, clubs: {} });
 
-function parseLevelFile(input: unknown, file: string, level: DirectoryLevel): Record<string, never> {
+function parseLevelFile(input: unknown, file: string, level: DirectoryLevel | "players"): Record<string, never> {
   if (input === null) return {};
   const value = input as { version?: unknown } & Record<string, unknown>;
   const records = value?.[level];
@@ -181,6 +202,23 @@ function toRunError(error: unknown): RunError {
 
 function isConfigPath(options: CreateSyncOptions): options is { configPath: string } {
   return typeof (options as { configPath?: unknown }).configPath === "string";
+}
+
+function parseRosterFile(input: unknown, file: string): RosterFile | null {
+  if (input === null) return null;
+  const value = input as Partial<RosterFile>;
+  if (value?.version !== 1 || !Array.isArray(value.players)) {
+    throw new FecapaError("STORE_CORRUPT", `${file} doesn't look like a fecapa-sync roster file`, { detail: file });
+  }
+  return value as RosterFile;
+}
+
+function parseActaFile(input: unknown, file: string): ActaRecord {
+  const value = input as Partial<ActaRecord> | null;
+  if (!value || typeof value.matchId !== "number" || !Array.isArray(value.home) || !Array.isArray(value.away)) {
+    throw new FecapaError("STORE_CORRUPT", `${file} doesn't look like a fecapa-sync acta`, { detail: file });
+  }
+  return value as ActaRecord;
 }
 
 function parseGamesFile(input: unknown, file: string, competitionId: number): GamesFile {
@@ -222,6 +260,8 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
       level: (level: DirectoryLevel) => path.join(season, `${level}.json`),
       actasDir: path.join(season, "actas"),
       acta: (key: string) => path.join(season, "actas", `${key}.json`),
+      players: path.join(season, "players.json"),
+      roster: (idc: number) => path.join(season, "rosters", `${idc}.json`),
     };
   };
 
@@ -248,6 +288,21 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
     return directory;
   }
 
+  async function loadPlayers(cfg: ResolvedConfig): Promise<Record<string, PlayerRecord>> {
+    const file = paths(cfg).players;
+    return parseLevelFile(await readJson(file), file, "players");
+  }
+
+  async function loadActas(cfg: ResolvedConfig, keys: Iterable<string>): Promise<Map<string, ActaRecord>> {
+    const actas = new Map<string, ActaRecord>();
+    for (const key of keys) {
+      const file = paths(cfg).acta(key);
+      const value = await readJson(file);
+      if (value !== null) actas.set(key, parseActaFile(value, file));
+    }
+    return actas;
+  }
+
   const hasLeagues = (directory: Directory) => Object.values(directory.leagues).some((league) => league.removedAt === null);
 
   /** The scope's league and team ids from the stored levels (no network). */
@@ -265,7 +320,7 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
     const startedAt = clock();
     const result: SyncResult = {
       status: "ok", reason: null, startedAt: startedAt.toISOString(), finishedAt: startedAt.toISOString(), requests: 0,
-      changes: emptyChanges(), backoffUntil: null, error: null, warnings: [], notes: cfg.notes,
+      changes: emptyChanges(), backoffUntil: null, error: null, warnings: [], notes: cfg.notes, notesChanged: false,
     };
     const finish = () => {
       result.finishedAt = clock().toISOString();
@@ -471,8 +526,10 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
             }
             if (outcome.status === "final") {
               const at = clock().toISOString();
+              const named = (players: ActaRecord["home"]) => players.map((player) => ({ ...player, name: storedName(player.name, cfg.players.names) }));
               const record: ActaRecord = {
-                ...outcome.report, homeId: game.homeId, awayId: game.awayId, startsAt: game.startsAt,
+                ...outcome.report, home: named(outcome.report.home), away: named(outcome.report.away),
+                homeId: game.homeId, awayId: game.awayId, startsAt: game.startsAt,
                 source: outcome.source, firstSeenAt: at, updatedAt: at,
               };
               writes.set(files.acta(key), record);
@@ -481,6 +538,90 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
             } else {
               pending[key] = recordActaAttempt(pending[key], game, { status: outcome.status }, clock(), cfg.refreshMs.actas);
             }
+          }
+        }
+
+        // Rosters: one request per league in scope, every refresh.players.
+        // Only players of the scope's teams are kept.
+        const rosters = new Map<number, RosterFile>();
+        if (cfg.levels.players && !scopeError) {
+          for (const idc of cfg.players.rosters ? scope.leagues : []) {
+            const file = files.roster(idc);
+            const stored = parseRosterFile(await readJson(file), file);
+            if (stored) rosters.set(idc, stored);
+          }
+          if (cfg.players.rosters && result.reason === null) {
+            const rosterState = ((season as RosterSeasonState).rosters ??= { leagues: {} });
+            const due = scope.leagues
+              .filter((idc) => force || leagueDue(rosterState.leagues[idc], startedAt))
+              .sort((a, b) => (rosterState.leagues[a]?.nextDueAt ?? "").localeCompare(rosterState.leagues[b]?.nextDueAt ?? ""));
+            for (const idc of due) {
+              if (!budget.canAfford(OPERATION_COST)) {
+                result.reason = "budget";
+                break;
+              }
+              const league = (rosterState.leagues[idc] ??= { lastAttemptAt: null, lastSuccessAt: null, nextDueAt: null, source: null });
+              league.lastAttemptAt = clock().toISOString();
+              let answer;
+              try {
+                answer = await client.getRosters(idc);
+              } catch (error) {
+                if (budget.spent) {
+                  result.reason = "budget";
+                  break;
+                }
+                throw error;
+              }
+              const now = clock();
+              const roster: RosterFile = {
+                version: 1, competitionId: idc, updatedAt: now.toISOString(), source: answer.source,
+                players: answer.players
+                  .filter((entry) => inTeamScope({ homeId: entry.teamId, awayId: entry.teamId }, scope.teams))
+                  .map((entry) => ({ ...entry, name: storedName(entry.name, cfg.players.names) })),
+              };
+              rosters.set(idc, roster);
+              writes.set(files.roster(idc), roster);
+              league.lastSuccessAt = now.toISOString();
+              league.nextDueAt = new Date(now.getTime() + cfg.refreshMs.players).toISOString();
+              league.source = answer.source;
+            }
+          }
+        }
+
+        // A stricter players.names rewrites what is already stored (no request).
+        let actas: Map<string, ActaRecord> | null = null;
+        if (cfg.players.names !== "full" || cfg.levels.players) {
+          actas = await loadActas(cfg, await storedActas(cfg));
+          for (const record of changes.actas.created) actas.set(String(record.matchId), record);
+          for (const [key, acta] of actas) {
+            const scrubbed = scrubActa(acta, cfg.players.names);
+            if (!scrubbed) continue;
+            actas.set(key, scrubbed);
+            writes.set(files.acta(key), scrubbed);
+            if (!changes.actas.created.some((record) => String(record.matchId) === key)) changes.actas.updated.push(scrubbed);
+          }
+          for (const [idc, roster] of rosters) {
+            const scrubbed = scrubRoster(roster, cfg.players.names);
+            if (!scrubbed) continue;
+            rosters.set(idc, scrubbed);
+            writes.set(files.roster(idc), scrubbed);
+          }
+        }
+
+        // Players: rebuilt from the stored actas (and rosters) on every run; no request.
+        if (cfg.levels.players && !scopeError && actas) {
+          const before = await loadPlayers(cfg);
+          const fresh = buildPlayers({
+            season: cfg.season, actas: [...actas.values()], rosters: [...rosters.values()], directory,
+            existing: before, names: cfg.players.names, teams: scope.teams,
+          });
+          const now = clock().toISOString();
+          const after = mergeRecords(before, fresh, now);
+          const diff = diffRecords(before, after);
+          changes.players = diff;
+          const fileMissing = (await readJson(files.players)) === null;
+          if (fileMissing || diff.created.length || diff.updated.length || diff.removed.length) {
+            writes.set(files.players, { version: 1, season: cfg.season, updatedAt: now, players: after });
           }
         }
       } catch (error) {
@@ -520,6 +661,9 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
         result.error = toRunError(scopeError);
       }
       if (budget.used > 0) draft.backoff = null;
+      const previousNotes = (state as SyncState & NotesState).notes;
+      result.notesChanged = JSON.stringify(previousNotes ?? []) !== JSON.stringify(result.notes);
+      (draft as SyncState & NotesState).notes = result.notes;
       finish();
       const summary: RunSummary = { startedAt: result.startedAt, finishedAt: result.finishedAt, status: result.status, requests: result.requests };
       if (result.reason) summary.reason = result.reason;
@@ -562,6 +706,10 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
       }
       const games = await loadGames(cfg, scope.leagues);
       const stored = await storedActas(cfg);
+      const players = Object.values(await loadPlayers(cfg) as Record<string, PlayerRecord>);
+      const rosterState = (season as RosterSeasonState).rosters?.leagues ?? {};
+      const rosterDue = cfg.levels.players && cfg.players.rosters ? scope.leagues.filter((idc) => leagueDue(rosterState[idc], now)) : [];
+      const rosterNext = scope.leagues.map((idc) => rosterState[idc]?.nextDueAt ?? null).filter((at): at is string => at !== null).sort();
       const pendingList: Array<[string, PendingActa]> = Object.entries(season.actas.pending);
       const allGames = [...games.values()].flatMap((file) => Object.values(file.games));
       const nextAttempts = pendingList.map(([, p]) => p.nextAttemptAt).filter((at): at is string => at !== null).sort();
@@ -608,6 +756,13 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
           gaveUp: pendingList.filter(([, p]) => p.gaveUp).length,
           due: cfg.levels.actas ? allGames.filter((game) => !stored.has(game.key) && actaDue(game, season.actas.pending[game.key], now)).length : 0,
           nextAttemptAt: nextAttempts[0] ?? null,
+        },
+        players: {
+          enabled: cfg.levels.players,
+          stored: players.filter((player) => player.removedAt === null).length,
+          removed: players.filter((player) => player.removedAt !== null).length,
+          names: cfg.players.names,
+          rosters: { enabled: cfg.levels.players && cfg.players.rosters, due: rosterDue.length, nextDueAt: rosterDue.length ? null : rosterNext[0] ?? null },
         },
         notes: cfg.notes,
       };

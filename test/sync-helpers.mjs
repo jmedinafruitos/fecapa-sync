@@ -72,10 +72,11 @@ export function reportBody(id, { home = 900101, away = 900102 } = {}) {
 /**
  * A fake SIDGAD API. `calendars[idc]` is a calendar body (or a function
  * returning a Response/body); `reports[id]` likewise. Unknown reports answer
- * NO FILE, like SIDGAD does. `leagues` and `clubs` answer the list endpoints.
+ * NO FILE, like SIDGAD does. `leagues` and `clubs` answer the list endpoints;
+ * `rosters[idc]` the per-league `stats` endpoint (unknown leagues answer NO FILE).
  * Every request is counted in `calls`.
  */
-export function fakeApi({ calendars = {}, reports = {}, leagues, clubs } = {}) {
+export function fakeApi({ calendars = {}, reports = {}, leagues, clubs, rosters = {} } = {}) {
   const calls = [];
   const answer = async (value) => {
     const resolved = await (typeof value === 'function' ? value() : value);
@@ -90,11 +91,12 @@ export function fakeApi({ calendars = {}, reports = {}, leagues, clubs } = {}) {
       return answer(calendars[id]);
     }
     if (parsed.pathname.endsWith('/report/')) return answer(id in reports ? reports[id] : { status: 'NO FILE' });
+    if (parsed.pathname.endsWith('/stats/')) return answer(id in rosters ? rosters[id] : { status: 'NO FILE' });
     if (parsed.pathname.endsWith('/leagues/') && api.leagues !== undefined) return answer(api.leagues);
     if (parsed.pathname.endsWith('/clubs/') && api.clubs !== undefined) return answer(api.clubs);
     throw new Error(`Unexpected request in test: ${url}`);
   };
-  const api = { fetch, calls, calendars, reports, leagues, clubs };
+  const api = { fetch, calls, calendars, reports, leagues, clubs, rosters };
   return api;
 }
 

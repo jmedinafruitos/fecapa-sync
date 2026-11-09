@@ -4,17 +4,18 @@ import { z } from "zod";
 import { FecapaError } from "../errors.js";
 import { currentSeason } from "../time.js";
 import { DAY_MS, formatDuration, HOUR_MS, parseDuration } from "./duration.js";
+import { NAME_MODES, type NameMode } from "./players.js";
 import { scopeNeedsDirectory, type ScopeInput } from "./resolve.js";
 
 export const LEVELS = ["leagues", "categories", "teams", "clubs", "games", "actas", "players"] as const;
 export type Level = (typeof LEVELS)[number];
 
 /** Levels this version can sync. */
-export const AVAILABLE_LEVELS = ["leagues", "categories", "teams", "clubs", "games", "actas"] as const;
+export const AVAILABLE_LEVELS = ["leagues", "categories", "teams", "clubs", "games", "actas", "players"] as const;
 export type AvailableLevel = (typeof AVAILABLE_LEVELS)[number];
 
 /** The milestone in which each level that isn't available yet is planned. */
-export const PLANNED_IN: Partial<Record<Level, string>> = { players: "0.4" };
+export const PLANNED_IN: Partial<Record<Level, string>> = {};
 
 /**
  * Levels each level needs. `games` needs leagues only when the scope names
@@ -72,6 +73,12 @@ export const configSchema = z.object({
   }).strict().optional(),
   levels: levelFlags.optional(),
   refresh: refreshValues.optional(),
+  players: z.object({
+    /** How player names are stored: `"full"` (default), `"initials"` or `"none"` (ids and stats only). */
+    names: z.enum(NAME_MODES).optional(),
+    /** Also fetch each league's roster (one request per league every `refresh.players`), for players who haven't played yet. Default false. */
+    rosters: z.boolean().optional(),
+  }).strict().optional(),
   limits: z.object({
     maxRequestsPerRun: z.number().int().min(MIN_MAX_REQUESTS_PER_RUN).optional(),
     delayMs: z.number().int().min(0).optional(),
@@ -105,6 +112,8 @@ export type ResolvedConfig = {
   maxRequestsPerRun: number;
   delayMs: number;
   token: string | null;
+  /** The `players` options with their defaults. */
+  players: { names: NameMode; rosters: boolean };
   /** Human-readable notes about values that were raised to a floor or levels turned on as dependencies. */
   notes: string[];
 };
@@ -176,7 +185,7 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
   const unavailable = [...enabled].filter((level) => PLANNED_IN[level]);
   if (unavailable.length) {
     const list = unavailable.map((level) => `"${level}" (${PLANNED_IN[level]})`).join(", ");
-    throw invalid(`level ${list} is not available yet in this version; only "games" and "actas" can be synced. Set it to false.`, `levels.${unavailable[0]}`);
+    throw invalid(`level ${list} is not available yet in this version. Set it to false.`, `levels.${unavailable[0]}`);
   }
   if (!enabled.size) throw invalid('no level is enabled; enable at least "games"', "levels");
   const hasScope = scope.leagues === "all" || scope.leagues.length > 0 || scope.teams.length > 0 || scope.clubs.length > 0 || scope.categories.length > 0;
@@ -195,6 +204,9 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
     if ((AVAILABLE_LEVELS as readonly string[]).includes(level)) refreshMs[level as AvailableLevel] = effective;
   }
 
+  const players = { names: config.players?.names ?? "full", rosters: config.players?.rosters ?? false };
+  if (players.rosters && !enabled.has("players")) notes.push("players.rosters has no effect while levels.players is off");
+
   const delay = config.limits?.delayMs ?? DEFAULT_SYNC_DELAY_MS;
   if (delay < MIN_SYNC_DELAY_MS) notes.push(`limits.delayMs ${delay} raised to the minimum ${MIN_SYNC_DELAY_MS}`);
 
@@ -212,6 +224,7 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
     maxRequestsPerRun: config.limits?.maxRequestsPerRun ?? DEFAULT_MAX_REQUESTS_PER_RUN,
     delayMs: Math.max(delay, MIN_SYNC_DELAY_MS),
     token: config.token ?? env.FECAPA_SIDGAD_TOKEN ?? null,
+    players,
     notes,
   };
 }
