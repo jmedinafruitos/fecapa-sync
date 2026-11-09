@@ -152,6 +152,10 @@ function formatStatus(status: SyncStatus): string {
   if (status.levels.actas) {
     lines.push(`  actas: ${status.actas.stored} stored, ${status.actas.due} due now, ${status.actas.pending} waiting, ${status.actas.gaveUp} given up${status.actas.nextAttemptAt ? `, next retry ${status.actas.nextAttemptAt}` : ""}`);
   }
+  if (status.players.enabled) {
+    const rosters = status.players.rosters;
+    lines.push(`  players: ${status.players.stored} stored (${status.players.removed} removed), names ${status.players.names}, rosters ${rosters.enabled ? `on, ${rosters.due} league(s) due${rosters.nextDueAt ? `, next ${rosters.nextDueAt}` : ""}` : "off"}`);
+  }
   for (const note of status.notes) lines.push(`  note: ${note}`);
   return lines.join("\n");
 }
