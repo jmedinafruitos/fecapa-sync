@@ -79,12 +79,12 @@ test('team suffixes are removed carefully to name a club', () => {
   assert.equal(teamBaseName('CP PROVA B'), 'CP PROVA');
   assert.equal(teamBaseName('CP PROVA  A '), 'CP PROVA');
   assert.equal(teamBaseName("CP PROVA 'C'"), 'CP PROVA');
-  assert.equal(teamBaseName('RIBES INVENTAT A A'), 'RIBES INVENTAT');
+  assert.equal(teamBaseName('RIERA INVENTADA A A'), 'RIERA INVENTADA');
   assert.equal(teamBaseName('CP PROVA HCP'), 'CP PROVA HCP');
   assert.equal(teamBaseName('X'), 'X');
-  assert.deepEqual(clubNameFromTeams(['CP CONGRÉS A', 'CP CONGRES B', 'CP CONGRES', 'CP CONGRES D', 'ALTRE NOM']), {
-    name: 'CP CONGRES', aliases: ['CP CONGRES', 'CP CONGRÉS', 'ALTRE NOM'],
+  assert.deepEqual(clubNameFromTeams(['CP FICTÍCIA A', 'CP FICTICIA B', 'CP FICTICIA', 'CP FICTICIA D', 'ALTRE NOM']), {
+    name: 'CP FICTICIA', aliases: ['CP FICTICIA', 'CP FICTÍCIA', 'ALTRE NOM'],
   });
   // A tie between spellings prefers the accented one.
-  assert.equal(clubNameFromTeams(['CP CONGRÉS A', 'CP CONGRES B']).name, 'CP CONGRÉS');
+  assert.equal(clubNameFromTeams(['CP FICTÍCIA A', 'CP FICTICIA B']).name, 'CP FICTÍCIA');
 });
