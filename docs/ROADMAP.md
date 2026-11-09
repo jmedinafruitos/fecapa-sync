@@ -390,8 +390,10 @@ competitions only).
   and saves the answer anonymised: people (players, staff, referees, and the
   individual athletes in the clubs list) always get invented names and ids
   ≥ 900000; teams, clubs and venues too unless `--keep-teams` (local
-  debugging only). It works on key names, then sweeps known names and ids out
-  of free text, and refuses to write if `findLeaks` finds anything. Dates,
+  debugging only). It works on key names; text in any field that is neither
+  mapped nor known to be safe becomes `"[redacted]"`, then known names and
+  ids are swept out of the remaining text, and it refuses to write if
+  `findLeaks` finds anything. Dates,
   times, scores, statuses, roles, match and competition ids and group names
   are kept. It writes only inside `fixtures/` unless `--force`.
 - **All fixtures** are parsed on every test run, found by name

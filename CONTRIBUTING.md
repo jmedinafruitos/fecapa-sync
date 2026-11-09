@@ -52,6 +52,8 @@ llavors una incidència amb l'etiqueta `source-drift`. Per arreglar-ho:
      comitis mai**);
    - les dates, hores, marcadors, estats, `player_role`, ids de partit i noms
      de grup no es toquen, perquè els analitzadors els necessiten;
+   - el text de qualsevol altre camp que no se sap segur que sigui inofensiu
+     passa a `"[redacted]"`;
    - el mateix fitxer d'entrada sempre dona la mateixa sortida.
 
    Si queda algun nom o id original, no escriu res. Només escriu dins de
@@ -137,7 +139,8 @@ opens a `source-drift` issue.
    invented names and their ids ids ≥ 900000; team and club names and ids and
    venues are replaced too unless `--keep-teams` (local debugging only, never
    commit it). Dates, times, scores, statuses, `player_role`, match ids and
-   group names are kept. The mapping is deterministic. Nothing is written if
+   group names are kept; text in any other field not known to be harmless
+   becomes `"[redacted]"`. The mapping is deterministic. Nothing is written if
    any input name or id survives, or outside `fixtures/` without `--force`.
    The file is saved even when the parser fails, and the CLI prints the error:
    that is your failing test.
