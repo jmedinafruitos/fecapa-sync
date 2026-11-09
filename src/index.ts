@@ -118,5 +118,23 @@ export {
   type TeamRecord,
   type TeamsFile,
 } from "./sync/discovery.js";
-export { mergeCalendar, type GameHistoryEntry, type GameRecord, type GamesFile, type MergeResult } from "./sync/games.js";
+export { gameRevision, mergeCalendar, type GameHistoryEntry, type GameRecord, type GamesFile, type MergeResult } from "./sync/games.js";
 export { BACKOFF_BASE_MS, BACKOFF_MAX_MS, type Backoff, type LeagueState, type LevelState, type RunError, type RunSummary, type SyncState } from "./sync/state.js";
+export {
+  anonymise,
+  findLeaks,
+  type AnonymiseCounts,
+  type AnonymiseOptions,
+  type AnonymiseResult,
+  type Leak,
+} from "./capture/anonymise.js";
+export {
+  capture,
+  CAPTURE_KINDS,
+  defaultCapturePath,
+  parseCaptured,
+  type CaptureKind,
+  type CaptureOptions,
+  type CaptureParse,
+  type CaptureResult,
+} from "./capture/capture.js";

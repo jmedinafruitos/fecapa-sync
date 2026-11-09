@@ -1,0 +1,6 @@
+{
+  "$comment": "Exceptions only. Every .json/.html file under fixtures/<source>/ named <yyyy>[-<mm>]-<kind>[-<label>] is parsed by test/all-fixtures.test.mjs with the parser for its kind and must parse. List a file here only when its kind can't be read from its name or it must fail with a given error code.",
+  "files": {
+    "sidgad-api/2026-11-rejected-invalid-domain.json": { "kind": "calendar", "expect": "SOURCE_REJECTED" }
+  }
+}

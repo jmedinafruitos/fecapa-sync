@@ -1,0 +1,62 @@
+name: FECAPA changed (source drift)
+description: FECAPA or SIDGAD changed a format and the library can't read it (SOURCE_FORMAT_CHANGED, an unexpected refusal, missing fields).
+title: "Source drift: <source> <what changed>"
+labels: ["source-drift"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Describe the change with **error codes, source names, HTTP statuses and field paths only**.
+        **Never paste player, staff or referee names, raw match reports or rosters, or a SIDGAD token**: they hold minors' personal data.
+        If you can, attach a fixture made with `npx fecapa-sync capture` (it is anonymised) in a pull request instead.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source
+      options:
+        - sidgad-api
+        - portal-config
+        - legacy-html
+        - not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What fails
+      multiple: true
+      options:
+        - calendar
+        - report (acta)
+        - leagues
+        - clubs
+        - rosters (stats)
+        - portal page / config
+    validations:
+      required: true
+  - type: input
+    id: code
+    attributes:
+      label: Error code and detail
+      description: "e.g. SOURCE_FORMAT_CHANGED, portal-config, games.3.dia_partido: expected string. No names."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: fecapa-sync version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What changed
+      description: Field names, shapes and when you first saw it. Competition or match ids only if they are public and needed to reproduce.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This issue contains no personal data (no player, staff or referee names) and no token.
+          required: true

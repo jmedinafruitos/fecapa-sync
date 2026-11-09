@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { capture, CAPTURE_KINDS, CAPTURE_NEEDS_ID, type CaptureKind, type CaptureResult } from "./capture/capture.js";
 import { CATEGORIES } from "./categories.js";
 import { isFecapaError } from "./errors.js";
 import { DEFAULT_CONFIG_FILE, exampleConfig } from "./sync/config.js";
@@ -29,6 +30,13 @@ Export (reads the local store; no network):
               [--team <name|id>] [--club <name|id>] [--category <name>] [--league <name|id>]
               [--out <file>]                     ICS is for games only. Default format json, to stdout.
 
+Contribute (one live request, two without a token):
+  capture     <calendar|report|leagues|clubs|rosters> [<id>] [--out fixtures/<source>/<yyyy-mm>-<name>.json]
+              [--keep-teams] [--force]           Saves one SIDGAD answer, anonymised, as a test fixture.
+              <id>: competition id (calendar, rosters) or match id (report). Player, staff and referee
+              names and ids are always replaced; team and club names and ids too unless --keep-teams
+              (local debugging only, never commit). Writes only inside fixtures/ unless --force.
+
 Options:
   --config <file>  Config file (default: ${DEFAULT_CONFIG_FILE})
   --json           Print the full result as JSON
@@ -43,6 +51,7 @@ club or category name that matches nothing or several things).`;
 const SYNC_COMMANDS = ["init", "sync", "status"];
 const DISCOVER_COMMANDS = ["leagues", "categories", "clubs", "teams", "find"];
 const EXPORT_COMMAND = "export";
+const CAPTURE_COMMAND = "capture";
 
 type Args = {
   command: string | undefined;
@@ -59,13 +68,18 @@ type Args = {
   level: ExportLevel | undefined;
   format: ExportFormat;
   out: string | undefined;
+  /** capture: what to capture and its id. */
+  kind: CaptureKind | undefined;
+  id: number | undefined;
+  force: boolean;
+  keepTeams: boolean;
 };
 
 class UsageError extends Error {}
 
 function parseArgs(argv: string[]): Args {
   const args: Args = { command: undefined, query: undefined, config: DEFAULT_CONFIG_FILE, json: false, live: false, verbose: false, club: undefined, category: undefined, league: undefined,
-    team: undefined, level: undefined, format: "json", out: undefined };
+    team: undefined, level: undefined, format: "json", out: undefined, kind: undefined, id: undefined, force: false, keepTeams: false };
   const value = (i: number, flag: string) => {
     const next = argv[i];
     if (!next || next.startsWith("--")) throw new UsageError(`${flag} needs a value`);
@@ -92,15 +106,28 @@ function parseArgs(argv: string[]): Args {
     } else if (arg === "--json") args.json = true;
     else if (arg === "--live") args.live = true;
     else if (arg === "--verbose" || arg === "-v") args.verbose = true;
+    else if (arg === "--force") args.force = true;
+    else if (arg === "--keep-teams") args.keepTeams = true;
     else if (arg === "--help" || arg === "-h") args.command = "help";
     else if (arg.startsWith("-")) throw new UsageError(`Unknown option ${arg}`);
     else if (args.command === undefined) args.command = arg;
+    else if (args.command === CAPTURE_COMMAND && args.kind === undefined) {
+      if (!(CAPTURE_KINDS as readonly string[]).includes(arg)) throw new UsageError(`capture needs one of ${CAPTURE_KINDS.join(", ")}`);
+      args.kind = arg as CaptureKind;
+    } else if (args.command === CAPTURE_COMMAND && args.id === undefined && /^\d+$/.test(arg) && Number(arg) > 0) args.id = Number(arg);
     else if (args.command === "find" && args.query === undefined) args.query = arg;
     else if (args.command === "find") args.query = `${args.query} ${arg}`;
     else throw new UsageError(`Unexpected argument ${arg}`);
   }
   if (args.command === "find" && !args.query) throw new UsageError("find needs a query, e.g. fecapa-sync find \"<club name>\"");
   if (args.command !== EXPORT_COMMAND && args.league !== undefined && !/^\d+$/.test(args.league)) throw new UsageError("--league needs a league id");
+  if (args.command === CAPTURE_COMMAND) {
+    if (!args.kind) throw new UsageError(`capture needs one of ${CAPTURE_KINDS.join(", ")}, e.g. fecapa-sync capture report <match id>`);
+    if (CAPTURE_NEEDS_ID.includes(args.kind) && args.id === undefined) throw new UsageError(`capture ${args.kind} needs an id`);
+    if (!CAPTURE_NEEDS_ID.includes(args.kind) && args.id !== undefined) throw new UsageError(`capture ${args.kind} takes no id`);
+  } else if (args.force || args.keepTeams) {
+    throw new UsageError("--force and --keep-teams only apply to capture");
+  }
   if (args.command === EXPORT_COMMAND) {
     if (!args.level) throw new UsageError("export needs --level, e.g. fecapa-sync export --level games --format ics --team <id>");
     if (args.format === "ics" && args.level !== "games") throw new UsageError("--format ics is for --level games only");
@@ -262,6 +289,31 @@ async function runExport(args: Args, configPath: string, out: (text: string) => 
   }
 }
 
+function formatCapture(result: CaptureResult): string {
+  const { counts } = result;
+  const lines = [
+    `fecapa-sync capture: ${result.kind} → ${result.file} (${result.bytes} bytes, ${result.requests} request${result.requests === 1 ? "" : "s"} via ${result.source})`,
+    `  anonymised: ${counts.people} people, ${counts.players} person ids${result.keepTeams ? "; teams and clubs kept (--keep-teams: local debugging only, don't commit)" : `, ${counts.teams} teams, ${counts.clubs} clubs, ${counts.venues} venues`}; ${counts.redacted} unknown text field(s) redacted`,
+    result.parse.ok
+      ? `  parser: ok (${result.parse.summary})`
+      : `  parser: ${result.parse.code}${result.parse.detail ? ` (${result.parse.detail})` : ""}. Add a failing test with this fixture, then fix the parser (CONTRIBUTING.md).`,
+  ];
+  return lines.join("\n");
+}
+
+async function runCapture(args: Args, out: (text: string) => void): Promise<void> {
+  const token = process.env.FECAPA_SIDGAD_TOKEN || undefined;
+  const result = await capture({
+    kind: args.kind!,
+    ...(args.id !== undefined ? { id: args.id } : {}),
+    ...(args.out !== undefined ? { out: args.out } : {}),
+    ...(token ? { token } : {}),
+    force: args.force,
+    keepTeams: args.keepTeams,
+  });
+  out(formatCapture(result));
+}
+
 async function main(
   argv: string[], out: (text: string) => void = console.log, err: (text: string) => void = console.error,
   write: (text: string) => void = (text) => process.stdout.write(text),
@@ -277,13 +329,23 @@ async function main(
     out(USAGE);
     return 0;
   }
-  if (![...SYNC_COMMANDS, ...DISCOVER_COMMANDS, EXPORT_COMMAND].includes(args.command ?? "")) {
+  if (![...SYNC_COMMANDS, ...DISCOVER_COMMANDS, EXPORT_COMMAND, CAPTURE_COMMAND].includes(args.command ?? "")) {
     err(args.command ? `Unknown command "${args.command}"\n\n${USAGE}` : USAGE);
     return 2;
   }
   if (args.live && !DISCOVER_COMMANDS.includes(args.command!)) {
     err(`--live only applies to ${DISCOVER_COMMANDS.join(", ")}\n\n${USAGE}`);
     return 2;
+  }
+
+  if (args.command === CAPTURE_COMMAND) {
+    try {
+      await runCapture(args, out);
+      return 0;
+    } catch (error) {
+      err(`fecapa-sync capture: ${isFecapaError(error) ? `${error.code}: ` : ""}${(error as Error).message}`);
+      return isFecapaError(error, "INVALID_ARGUMENT") ? 2 : 1;
+    }
   }
 
   const configPath = path.resolve(args.config);

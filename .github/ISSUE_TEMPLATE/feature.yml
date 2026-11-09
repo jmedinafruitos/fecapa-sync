@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a feature for the library or CLI.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `fecapa-sync` is a club-agnostic library and CLI (no hosted service) that syncs rarely and respects FECAPA's servers.
+        A feature that adds requests needs a reason and a budget. See docs/ROADMAP.md, "Principles".
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: The problem, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: API, CLI or config shape you have in mind.
+  - type: textarea
+    id: cost
+    attributes:
+      label: Request cost
+      description: Does it need extra requests to FECAPA/SIDGAD? How many per run, and how often?
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Checklist
+      options:
+        - label: It works for any club (no club-specific behaviour).
+          required: true
+        - label: This issue contains no personal data and no token.
+          required: true

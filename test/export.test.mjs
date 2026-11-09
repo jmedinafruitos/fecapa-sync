@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
-import { CSV_COLUMNS, csvField, foldLine, gamesToIcs, toCsv } from '../dist/index.js';
+import { CSV_COLUMNS, csvField, foldLine, gameRevision, gamesToIcs, mergeCalendar, toCsv } from '../dist/index.js';
 import { jsonFixture } from './helpers.mjs';
 import { validateIcs } from './ics-validator.mjs';
 import { calendarBody, DAY, fakeApi, fakeClock, reportBody, TEAMS, tempDir, testSync } from './sync-helpers.mjs';
@@ -117,6 +117,45 @@ test('ICS: SEQUENCE grows with each reschedule and removed games are exported as
   assert.equal(byUid[uid(900504)].SEQUENCE.value, '2');
   assert.equal(byUid[uid(900504)].DTSTAMP.value, '20261111T120000Z');
   assert.equal(byUid[uid(900501)].SEQUENCE.value, '0');
+});
+
+test('ICS: SEQUENCE never goes down when a removed game reappears', async () => {
+  const { sync, api, clock } = setup();
+  await sync.init();
+  const sequence = async () => events(validateIcs((await sync.export({ level: 'games', format: 'ics' })).content))[uid(900505)].SEQUENCE.value;
+  const calendar = (games) => calendarBody(games, { phaseId: 4951, phaseName: 'BCN BENJAMÍ PLATA 1' });
+  assert.equal(await sequence(), '0');
+  clock.advance(DAY);
+  api.calendars[4811] = calendar(GAMES_4811.filter((game) => game.id !== 900505));
+  await sync.run();
+  assert.equal(await sequence(), '1'); // removed: CANCELLED
+  clock.advance(DAY);
+  api.calendars[4811] = calendar(GAMES_4811);
+  await sync.run();
+  assert.equal(await sequence(), '2'); // back, same schedule: it used to drop to 0
+  clock.advance(DAY);
+  api.calendars[4811] = calendar(GAMES_4811.map((game) => (game.id === 900505 ? { ...game, time: '19:00' } : game)));
+  await sync.run();
+  assert.equal(await sequence(), '3');
+});
+
+test('ICS: a store written before 1.0 (no revision counter) loads and continues from the old SEQUENCE', () => {
+  const at = (day) => `2026-11-${day}T12:00:00.000Z`;
+  const match = { matchId: 900701, competitionId: 4811, phaseId: null, phaseName: null, round: 1, homeId: 900101, awayId: 900102,
+    homeName: 'CP PROVA B', awayName: 'CH FICTICI', date: '2026-11-28', time: '18:00', startsAt: '2026-11-28T17:00:00.000Z', venue: null };
+  const legacy = { ...mergeCalendar({}, [match], at(10)).games['900701'] };
+  delete legacy.revision;
+  const removedLegacy = { ...legacy, history: [{ date: '2026-11-27', time: '18:00', startsAt: '2026-11-27T17:00:00.000Z', venue: null, homeId: 900101, awayId: 900102, observedAt: at(11) }], removedAt: at(12) };
+  // Old rule: history length + 1 once removed.
+  assert.equal(gameRevision(removedLegacy), 2);
+  assert.match(gamesToIcs([removedLegacy]).content, /\r\nSEQUENCE:2\r\n/);
+  const back = mergeCalendar({ 900701: removedLegacy }, [match], at(13)).games['900701'];
+  assert.deepEqual([back.removedAt, back.revision], [null, 3]);
+  assert.match(gamesToIcs([back]).content, /\r\nSEQUENCE:3\r\n/);
+  // A rename shown in SUMMARY is a new revision too; an unchanged calendar is not.
+  const renamed = mergeCalendar({ 900701: back }, [{ ...match, homeName: 'CP PROVA C' }], at(14)).games['900701'];
+  assert.equal(renamed.revision, 4);
+  assert.equal(mergeCalendar({ 900701: renamed }, [{ ...match, homeName: 'CP PROVA C' }], at(15)).games['900701'].revision, 4);
 });
 
 test('ICS writer: folding counts octets, never splits a character, and the validator catches bad output', () => {

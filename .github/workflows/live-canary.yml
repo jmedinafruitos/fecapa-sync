@@ -1,0 +1,44 @@
+name: live-canary
+
+# Weekly check that FECAPA's public answers still parse. At most 5 live
+# requests, 2 s apart, against public competitions only. Nothing personal is
+# stored or printed: logs and the issue hold codes, sources, HTTP statuses and
+# field paths. On failure it opens (or updates) one "source-drift" issue; when
+# a later run passes it comments and closes it. Not a check on pull requests.
+
+on:
+  schedule:
+    - cron: "17 4 * * 3" # Wednesdays 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      simulate_drift:
+        description: "Simulate a format change offline (no live request) to test the issue flow"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: live-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    # Forks don't poll FECAPA on a schedule; anyone can still run it by hand.
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'jmedinafruitos/fecapa-sync'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check live sources and sync the source-drift issue
+        run: node scripts/live-canary.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANARY_SIMULATE_DRIFT: ${{ inputs.simulate_drift && 'true' || 'false' }}
