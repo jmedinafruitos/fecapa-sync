@@ -1,6 +1,6 @@
 {
   "name": "fecapa-sync",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Keep a local JSON copy of FECAPA (Federació Catalana de Patinatge) roller hockey fixtures and match reports.",
   "license": "MIT",
   "author": "Jordi Medina",

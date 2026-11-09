@@ -14,8 +14,10 @@ test('defaults: current season, games only, 24h games refresh, 200 requests per 
   assert.equal(config.season, '2026/2027');
   assert.equal(config.seasonDir, '2026-2027');
   assert.equal(config.dataDir, path.resolve('/srv/app', 'fecapa-data'));
-  assert.deepEqual(config.levels, { games: true, actas: false });
-  assert.deepEqual(config.refreshMs, { games: 24 * HOUR, actas: 12 * HOUR });
+  assert.deepEqual(config.levels, { leagues: false, categories: false, teams: false, clubs: false, games: true, actas: false });
+  assert.deepEqual(config.refreshMs, {
+    leagues: 7 * 24 * HOUR, categories: 30 * 24 * HOUR, teams: 7 * 24 * HOUR, clubs: 30 * 24 * HOUR, games: 24 * HOUR, actas: 12 * HOUR,
+  });
   assert.equal(config.maxRequestsPerRun, 200);
   assert.equal(config.delayMs, 1000);
   assert.equal(config.token, null);
@@ -40,13 +42,13 @@ test('refresh values below the floor are raised to it, with a note', () => {
 
 test('levels pull in their dependencies: actas turns games on', () => {
   const config = resolve({ ...base, levels: { actas: true } });
-  assert.deepEqual(config.levels, { games: true, actas: true });
+  assert.deepEqual(config.levels, { leagues: false, categories: false, teams: false, clubs: false, games: true, actas: true });
   assert.match(config.notes[0], /levels\.games turned on because levels\.actas needs it/);
   assert.throws(() => resolve({ ...base, levels: { actas: true, games: false } }), { code: 'INVALID_CONFIG', message: /levels\.actas needs levels\.games/ });
 });
 
 test('levels that are not available yet are refused with the milestone, not ignored', () => {
-  for (const [level, version] of [['leagues', '0.3'], ['categories', '0.3'], ['teams', '0.3'], ['clubs', '0.3'], ['players', '0.4']]) {
+  for (const [level, version] of [['players', '0.4']]) {
     assert.throws(() => resolve({ ...base, levels: { games: true, [level]: true } }), (error) => {
       assert.equal(error.code, 'INVALID_CONFIG');
       assert.match(error.message, new RegExp(`"${level}" \\(${version.replace('.', '\\.')}\\)`));
@@ -58,10 +60,21 @@ test('levels that are not available yet are refused with the milestone, not igno
   assert.doesNotThrow(() => resolve({ ...base, levels: { games: true, leagues: false, players: false } }));
 });
 
-test('category and club filters are refused until 0.3', () => {
-  assert.throws(() => resolve({ scope: { leagues: [4811], categories: ['Benjamí'] } }), { code: 'INVALID_CONFIG', message: /scope\.categories is not available until 0\.3/ });
-  assert.throws(() => resolve({ scope: { leagues: [4811], clubs: ['X'] } }), { code: 'INVALID_CONFIG', message: /scope\.clubs is not available until 0\.3/ });
-  assert.doesNotThrow(() => resolve({ scope: { leagues: [4811], categories: [], clubs: [] } }));
+test('category and club filters turn on the levels they are resolved against (0.3)', () => {
+  const byCategory = resolve({ scope: { categories: ['Benjamí'] } });
+  assert.deepEqual(byCategory.levels, { leagues: true, categories: true, teams: false, clubs: false, games: true, actas: false });
+  assert.deepEqual(byCategory.scope, { leagues: [], teams: [], clubs: [], categories: ['Benjamí'] });
+  assert.ok(byCategory.notes.some((note) => /levels\.categories turned on because scope\.categories needs it/.test(note)));
+  const byClub = resolve({ scope: { clubs: ['CP Exemple', 9001] } });
+  assert.deepEqual(byClub.levels, { leagues: true, categories: false, teams: true, clubs: true, games: true, actas: false });
+  assert.deepEqual(resolve({ scope: { leagues: 'all' } }).scope.leagues, 'all');
+  assert.equal(resolve({ scope: { leagues: 'all' } }).levels.leagues, true);
+  // Explicit league ids still need no discovery level.
+  assert.equal(resolve({ scope: { leagues: [4811], categories: [], clubs: [] } }).levels.leagues, false);
+  assert.throws(() => resolve({ scope: { clubs: ['X'] }, levels: { games: true, clubs: false } }), { code: 'INVALID_CONFIG', message: /scope\.clubs needs levels\.clubs/ });
+  assert.throws(() => resolve({ scope: {} }), { code: 'INVALID_CONFIG', detail: 'scope' });
+  // Discovery levels alone need no scope.
+  assert.doesNotThrow(() => resolve({ levels: { games: false, clubs: true } }));
 });
 
 test('invalid configs are INVALID_CONFIG with the field', () => {

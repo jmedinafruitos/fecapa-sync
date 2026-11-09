@@ -9,6 +9,17 @@ export {
   type GetFullReportOptions,
   type GetReportOptions,
 } from "./client.js";
+export {
+  CATEGORIES,
+  CATEGORY_KEYS,
+  categoryOf,
+  foldText,
+  inferGender,
+  normalizeCategory,
+  type CategoryDefinition,
+  type CategoryKey,
+  type NormalizedCategory,
+} from "./categories.js";
 export { ErrorCode, FecapaError, isFecapaError, type FecapaErrorContext, type SourceAttempt } from "./errors.js";
 export { sameFixture, type FixtureKey } from "./fixtures.js";
 export type { FetchLike } from "./http.js";
@@ -19,11 +30,15 @@ export { currentSeason, toStartsAt } from "./time.js";
 export {
   SOURCE_NAMES,
   type CalendarResult,
+  type ClubInfo,
+  type ClubsResult,
   type ExpectTeams,
   type FullReport,
   type FullReportResult,
   type Gender,
   type GenderInfo,
+  type LeagueInfo,
+  type LeaguesResult,
   type Match,
   type Participant,
   type Report,
@@ -31,6 +46,7 @@ export {
   type ReportStatus,
   type Side,
   type SourceName,
+  type TeamInfo,
 } from "./types.js";
 export { DEFAULT_USER_AGENT, VERSION } from "./version.js";
 export {
@@ -39,6 +55,7 @@ export {
   type CreateSyncOptions,
   type LeagueStatus,
   type LevelChanges,
+  type LevelStatus,
   type Sync,
   type SyncResult,
   type SyncRuntime,
@@ -59,5 +76,22 @@ export {
   type SyncConfig,
 } from "./sync/config.js";
 export { ACTA_GRACE_MS, ACTA_MAX_ATTEMPTS, ACTA_MAX_RETRY_SPACING_MS, type ActaRecord, type PendingActa } from "./sync/actas.js";
+export { discover, type DiscoverOptions, type Discovery } from "./sync/discover.js";
+export { type DirectoryView, type LeagueFilter, type TeamFilter } from "./sync/directory.js";
+export {
+  clubNameFromTeams,
+  teamBaseName,
+  type CategoriesFile,
+  type CategoryRecord,
+  type ClubRecord,
+  type ClubsFile,
+  type Directory,
+  type GroupRecord,
+  type LeagueRecord,
+  type LeaguesFile,
+  type RecordMeta,
+  type TeamRecord,
+  type TeamsFile,
+} from "./sync/discovery.js";
 export { mergeCalendar, type GameHistoryEntry, type GameRecord, type GamesFile, type MergeResult } from "./sync/games.js";
-export { BACKOFF_BASE_MS, BACKOFF_MAX_MS, type Backoff, type LeagueState, type RunError, type RunSummary, type SyncState } from "./sync/state.js";
+export { BACKOFF_BASE_MS, BACKOFF_MAX_MS, type Backoff, type LeagueState, type LevelState, type RunError, type RunSummary, type SyncState } from "./sync/state.js";

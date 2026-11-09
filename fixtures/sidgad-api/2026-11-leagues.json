@@ -1,0 +1,291 @@
+{
+ "idcs": [
+  {
+   "idc": "4811",
+   "nombre_idc": "BENJAMÍ PLATA BARCELONA",
+   "id_zone": "20",
+   "zone_name": "BARCELONA",
+   "id_categoria": "1",
+   "nombre_categoria": "BENJAMI",
+   "id_sexo": "0",
+   "nombre_sexo": "MIXTA",
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900101,900102,900103,900104",
+   "teams": [
+    {
+     "name": "CP PROVA B",
+     "teamId": "900101",
+     "clubId": "9001",
+     "team_logo": "https://sidgad.example/logos_clubes/9001.png",
+     "name_short": "PRO"
+    },
+    {
+     "name": "CH FICTICI",
+     "teamId": "900102",
+     "clubId": "9002",
+     "team_logo": "https://sidgad.example/logos_clubes/9002.png",
+     "name_short": "FIC"
+    },
+    {
+     "name": "CLUB IMAGINARI",
+     "teamId": "900103",
+     "clubId": "9003",
+     "team_logo": "https://sidgad.example/logos_clubes/9003.png",
+     "name_short": "IMA"
+    },
+    {
+     "name": "PATIN INVENTAT ",
+     "teamId": "900104",
+     "clubId": "9004",
+     "team_logo": "https://sidgad.example/logos_clubes/9004.png",
+     "name_short": "INV"
+    }
+   ]
+  },
+  {
+   "idc": "4812",
+   "nombre_idc": "BENJAMÍ OR BARCELONA",
+   "id_zone": "20",
+   "zone_name": "BARCELONA",
+   "id_categoria": "1",
+   "nombre_categoria": "BENJAMI",
+   "id_sexo": "0",
+   "nombre_sexo": "MIXTA",
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900105,900106",
+   "teams": [
+    {
+     "name": "CP PROVA A",
+     "teamId": "900105",
+     "clubId": "9001",
+     "team_logo": "https://sidgad.example/logos_clubes/9001.png",
+     "name_short": "PRO"
+    },
+    {
+     "name": "CH FICTICI B",
+     "teamId": "900106",
+     "clubId": "9002",
+     "team_logo": "https://sidgad.example/logos_clubes/9002.png",
+     "name_short": "FIC"
+    }
+   ]
+  },
+  {
+   "idc": "4806",
+   "nombre_idc": "FEM 11 OR",
+   "id_zone": "1",
+   "zone_name": "FEDERACIÓ",
+   "id_categoria": "1",
+   "nombre_categoria": "BENJAMI",
+   "id_sexo": "1",
+   "nombre_sexo": "FEMENINA",
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900107,900108",
+   "teams": [
+    {
+     "name": "CP PROVA",
+     "teamId": "900107",
+     "clubId": "9001",
+     "team_logo": "https://sidgad.example/logos_clubes/9001.png",
+     "name_short": "PRO"
+    },
+    {
+     "name": "CLUB IMAGINARI FEM",
+     "teamId": "900108",
+     "clubId": "9003",
+     "team_logo": "https://sidgad.example/logos_clubes/9003.png",
+     "name_short": "IMA"
+    }
+   ]
+  },
+  {
+   "idc": "4775",
+   "nombre_idc": "NACIONAL CATALANA FEMENINA",
+   "id_zone": "1",
+   "zone_name": "FEDERACIÓ",
+   "id_categoria": "14",
+   "nombre_categoria": "NACIONAL CATALANA FEMENÍ",
+   "id_sexo": "1",
+   "nombre_sexo": "FEMENINA",
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900109,900115",
+   "teams": [
+    {
+     "name": "CP PROVA",
+     "teamId": "900109",
+     "clubId": "9001",
+     "team_logo": "https://sidgad.example/logos_clubes/9001.png",
+     "name_short": "PRO"
+    },
+    {
+     "name": "CH FICTICI",
+     "teamId": "900115",
+     "clubId": "9002",
+     "team_logo": "https://sidgad.example/logos_clubes/9002.png",
+     "name_short": "FIC"
+    }
+   ]
+  },
+  {
+   "idc": "4789",
+   "nombre_idc": " ALEVÍ OR ",
+   "id_zone": "1",
+   "zone_name": "FEDERACIÓ",
+   "id_categoria": "2",
+   "nombre_categoria": "ALEVÍ",
+   "id_sexo": "0",
+   "nombre_sexo": "MIXTA",
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900110,900111",
+   "teams": [
+    {
+     "name": "CLUB IMAGINARI",
+     "teamId": "900110",
+     "clubId": "9003",
+     "team_logo": "https://sidgad.example/logos_clubes/9003.png",
+     "name_short": "IMA"
+    },
+    {
+     "name": "CP PROVA SANTS",
+     "teamId": "900111",
+     "clubId": "9005",
+     "team_logo": "https://sidgad.example/logos_clubes/9005.png",
+     "name_short": "PRS"
+    }
+   ]
+  },
+  {
+   "idc": "5014",
+   "nombre_idc": "SUPERCOPA CATALANA MASCULINA",
+   "id_zone": "1",
+   "zone_name": "FEDERACIÓ",
+   "id_categoria": "0",
+   "nombre_categoria": null,
+   "id_sexo": null,
+   "nombre_sexo": null,
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900112,900113",
+   "teams": [
+    {
+     "name": "CP PROVA",
+     "teamId": "900112",
+     "clubId": "9001",
+     "team_logo": "https://sidgad.example/logos_clubes/9001.png",
+     "name_short": "PRO"
+    },
+    {
+     "name": "CH FICTICI",
+     "teamId": "900113",
+     "clubId": "9002",
+     "team_logo": "https://sidgad.example/logos_clubes/9002.png",
+     "name_short": "FIC"
+    }
+   ]
+  },
+  {
+   "idc": "5076",
+   "nombre_idc": "YOUTH GOLDEN CAT",
+   "id_zone": null,
+   "zone_name": null,
+   "id_categoria": "0",
+   "nombre_categoria": null,
+   "id_sexo": null,
+   "nombre_sexo": null,
+   "id_temp": "41",
+   "descripcion_web": null,
+   "nombre_temp": "2026/2027",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "900114,900116",
+   "teams": [
+    {
+     "name": "SELECCIÓ INVENTADA M",
+     "teamId": "900114",
+     "clubId": "9100009",
+     "team_logo": "https://sidgad.example/logos_clubes/9100009.png",
+     "name_short": "SEL"
+    },
+    {
+     "name": "SELECCIO INVENTADA F",
+     "teamId": "900116",
+     "clubId": "9100009",
+     "team_logo": "https://sidgad.example/logos_clubes/9100009.png",
+     "name_short": "SEL"
+    }
+   ]
+  },
+  {
+   "idc": "4700",
+   "nombre_idc": "BENJAMÍ OR",
+   "id_zone": "20",
+   "zone_name": "BARCELONA",
+   "id_categoria": "1",
+   "nombre_categoria": "BENJAMI",
+   "id_sexo": "0",
+   "nombre_sexo": "MIXTA",
+   "id_temp": "39",
+   "descripcion_web": null,
+   "nombre_temp": "2025/2026",
+   "mostrar_pistas": true,
+   "logo_idc": "https://sidgad.example/logos_competiciones/12.png",
+   "botones_liga": "portada,calendar,clasificaciones",
+   "default_btn": "portada",
+   "agrupada": false,
+   "ids_teams": "800101",
+   "teams": [
+    {
+     "name": "CP PROVA",
+     "teamId": "800101",
+     "clubId": "9001",
+     "team_logo": "https://sidgad.example/logos_clubes/9001.png",
+     "name_short": "PRO"
+    }
+   ]
+  }
+ ]
+}

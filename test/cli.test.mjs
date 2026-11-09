@@ -44,17 +44,18 @@ test('init without a config file writes a template and makes no request', async 
   const result = await run(['init'], dir);
   assert.equal(result.code, 0);
   const config = JSON.parse(readFileSync(path.join(dir, 'fecapa-sync.config.json'), 'utf8'));
-  assert.deepEqual(config.scope.leagues, [4811]);
+  assert.deepEqual(config.scope, { clubs: ['<club name>'], categories: ['Benjamí'] });
+  assert.match(result.stdout, /find "<name>" --live/);
   assert.equal(config.token, null);
   assert.equal(existsSync(path.join(dir, 'fecapa-data')), false);
 });
 
 test('an invalid config exits 2 with a clear message', async () => {
   const dir = tempDir();
-  const file = writeConfig(dir, { scope: { leagues: [4811] }, levels: { games: true, teams: true } });
+  const file = writeConfig(dir, { scope: { leagues: [4811] }, levels: { games: true, players: true } });
   const result = await run(['sync', '--config', file]);
   assert.equal(result.code, 2);
-  assert.match(result.stderr, /"teams" \(0\.3\)/);
+  assert.match(result.stderr, /"players" \(0\.4\)/);
 });
 
 test('status reads the local store and exits 0', async () => {
