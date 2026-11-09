@@ -25,6 +25,7 @@ Discover (read the local store; no network unless --live):
 Options:
   --config <file>  Config file (default: ${DEFAULT_CONFIG_FILE})
   --json           Print the full result as JSON
+  --verbose        sync: print the setup notes even when they haven't changed
   --live           Discover commands only: ask SIDGAD instead of the store
                    (2 requests, 3 without a token). For choosing a scope before "init".
 
@@ -41,6 +42,7 @@ type Args = {
   config: string;
   json: boolean;
   live: boolean;
+  verbose: boolean;
   club: string | undefined;
   category: string | undefined;
   league: number | undefined;
@@ -49,7 +51,7 @@ type Args = {
 class UsageError extends Error {}
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { command: undefined, query: undefined, config: DEFAULT_CONFIG_FILE, json: false, live: false, club: undefined, category: undefined, league: undefined };
+  const args: Args = { command: undefined, query: undefined, config: DEFAULT_CONFIG_FILE, json: false, live: false, verbose: false, club: undefined, category: undefined, league: undefined };
   const value = (i: number, flag: string) => {
     const next = argv[i];
     if (!next || next.startsWith("--")) throw new UsageError(`${flag} needs a value`);
@@ -68,6 +70,7 @@ function parseArgs(argv: string[]): Args {
       args.league = Number(raw);
     } else if (arg === "--json") args.json = true;
     else if (arg === "--live") args.live = true;
+    else if (arg === "--verbose" || arg === "-v") args.verbose = true;
     else if (arg === "--help" || arg === "-h") args.command = "help";
     else if (arg.startsWith("-")) throw new UsageError(`Unknown option ${arg}`);
     else if (args.command === undefined) args.command = arg;
@@ -82,7 +85,12 @@ function parseArgs(argv: string[]): Args {
 const count = (changes: { created: unknown[]; updated: unknown[]; removed: unknown[] }) =>
   `+${changes.created.length} ~${changes.updated.length} -${changes.removed.length}`;
 
-function formatResult(command: string, result: SyncResult): string {
+/**
+ * Setup notes ("levels.x turned on…", "scope → …") are the same on every run,
+ * which is noise in cron logs: they are printed on `init`, when they changed
+ * since the last run, or with `--verbose`. `--json` always has them.
+ */
+function formatResult(command: string, result: SyncResult, verbose: boolean): string {
   const lines: string[] = [];
   const reason = result.reason ? ` (${result.reason})` : "";
   lines.push(`fecapa-sync ${command}: ${result.status}${reason}, ${result.requests} request${result.requests === 1 ? "" : "s"}`);
@@ -96,7 +104,7 @@ function formatResult(command: string, result: SyncResult): string {
   if (result.error) lines.push(`  error: ${result.error.code}: ${result.error.message}`);
   if (result.backoffUntil) lines.push(`  backoff: no requests before ${result.backoffUntil}`);
   for (const warning of result.warnings) lines.push(`  warning: ${warning}`);
-  for (const note of result.notes) lines.push(`  note: ${note}`);
+  if (command === "init" || verbose || result.notesChanged) for (const note of result.notes) lines.push(`  note: ${note}`);
   return lines.join("\n");
 }
 
@@ -248,7 +256,7 @@ adjust scope.categories (or remove it for every category), then run "fecapa-sync
       return 0;
     }
     const result = args.command === "init" ? await sync.init() : await sync.run();
-    out(args.json ? JSON.stringify(result, null, 2) : formatResult(args.command!, result));
+    out(args.json ? JSON.stringify(result, null, 2) : formatResult(args.command!, result, args.verbose));
     if (result.status !== "failed") return 0;
     return result.error?.code === "INVALID_CONFIG" || result.error?.code === "STORE_EMPTY" ? 2 : 1;
   } catch (error) {
