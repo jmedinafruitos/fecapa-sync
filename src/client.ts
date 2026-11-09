@@ -2,10 +2,10 @@ import { FecapaError, type SourceAttempt } from "./errors.js";
 import { HttpClient, type FetchLike } from "./http.js";
 import { toSideReport, type FullReportRequest } from "./parsers/sidgad-json.js";
 import { legacyHtmlCalendar, legacyHtmlReport } from "./sources/legacy-html.js";
-import { portalConfigCalendar, portalConfigDirectory, portalConfigReport } from "./sources/portal-config.js";
-import { sidgadApiCalendar, sidgadApiDirectory, sidgadApiReport } from "./sources/sidgad-api.js";
-import type { CalendarSource, DirectorySource, ReportSource, SourceContext } from "./sources/types.js";
-import { SOURCE_NAMES, type CalendarResult, type ClubsResult, type ExpectTeams, type FullReportResult, type LeaguesResult, type ReportResult, type Side, type SourceName } from "./types.js";
+import { portalConfigCalendar, portalConfigDirectory, portalConfigReport, portalConfigRosters } from "./sources/portal-config.js";
+import { sidgadApiCalendar, sidgadApiDirectory, sidgadApiReport, sidgadApiRosters } from "./sources/sidgad-api.js";
+import type { CalendarSource, DirectorySource, ReportSource, RosterSource, SourceContext } from "./sources/types.js";
+import { SOURCE_NAMES, type CalendarResult, type ClubsResult, type ExpectTeams, type FullReportResult, type LeaguesResult, type ReportResult, type RostersResult, type Side, type SourceName } from "./types.js";
 import { DEFAULT_USER_AGENT } from "./version.js";
 
 export const DEFAULT_BASE_URL = "https://www.hoqueipatins.fecapa.cat";
@@ -60,6 +60,12 @@ export type FecapaClient = {
   getLeagues(): Promise<LeaguesResult>;
   /** Clubs of this modality with their official names. One request. JSON sources only. */
   getClubs(): Promise<ClubsResult>;
+  /**
+   * Players registered with each team of one competition (SIDGAD `stats`,
+   * `stats.rosters`), including those who haven't played yet. One request
+   * per competition (about 1 MB for a large youth league). JSON sources only.
+   */
+  getRosters(idc: number): Promise<RostersResult>;
 };
 
 const CALENDAR_SOURCES: Record<SourceName, CalendarSource> = {
@@ -72,6 +78,12 @@ const CALENDAR_SOURCES: Record<SourceName, CalendarSource> = {
 const DIRECTORY_SOURCES: Partial<Record<SourceName, DirectorySource>> = {
   "sidgad-api": sidgadApiDirectory,
   "portal-config": portalConfigDirectory,
+};
+
+// legacy-html has no rosters.
+const ROSTER_SOURCES: Partial<Record<SourceName, RosterSource>> = {
+  "sidgad-api": sidgadApiRosters,
+  "portal-config": portalConfigRosters,
 };
 
 const REPORT_SOURCES: Record<SourceName, ReportSource> = {
@@ -134,7 +146,7 @@ export function createClient(options: ClientOptions = {}): FecapaClient {
     return ctx;
   };
 
-  async function run<S extends CalendarSource | ReportSource | DirectorySource, T>(
+  async function run<S extends CalendarSource | ReportSource | DirectorySource | RosterSource, T>(
     registry: Partial<Record<SourceName, S>>, call: (source: S, ctx: SourceContext) => Promise<T>,
   ): Promise<{ source: SourceName; value: T }> {
     const ctx = newContext();
@@ -198,6 +210,11 @@ export function createClient(options: ClientOptions = {}): FecapaClient {
     async getClubs() {
       const { source, value } = await run(DIRECTORY_SOURCES, (s, ctx) => s.getClubs(ctx));
       return { source, clubs: value };
+    },
+    async getRosters(idc) {
+      const competitionId = positiveInteger(idc, "idc");
+      const { source, value } = await run(ROSTER_SOURCES, (s, ctx) => s.getRosters(competitionId, ctx));
+      return { source, competitionId, players: value };
     },
   };
 }

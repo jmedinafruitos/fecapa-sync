@@ -45,3 +45,33 @@ test('without a token the list endpoints use the public config from the portal h
   await assert.rejects(createClient({ fetch: changed, delayMs: 0, token: 't', sources: ['sidgad-api'] }).getLeagues(), { code: 'SOURCE_FORMAT_CHANGED' });
 });
 
+
+test('getRosters reads stats.rosters of one league: registered players, also those who have not played (one request)', async () => {
+  const { fetch, calls } = fakeFetch([['/stats/', () => json(jsonFixture('sidgad-api/2026-11-stats.json'))]]);
+  const { source, competitionId, players } = await createClient({ fetch, delayMs: 0, token: 't' }).getRosters(4811);
+  assert.equal(source, 'sidgad-api');
+  assert.equal(competitionId, 4811);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.sidgad.com/fecapa/v1/hp/stats/?id=4811&jwt=t');
+  assert.equal(calls[0].headers.origin, PORTAL);
+  // The duplicated row is dropped; staff are never read.
+  assert.equal(players.length, 6);
+  assert.deepEqual(players[0], { fecapaId: 900001, teamId: 900101, name: 'JUGADOR PROVA PRIMER', played: 5, goals: 3, blueCards: 1, redCards: 0 });
+  assert.deepEqual(players.find((p) => p.fecapaId === 900050), { fecapaId: 900050, teamId: 900101, name: 'ALUMNA NOVA INVENTADA', played: 0, goals: 0, blueCards: 0, redCards: 0 });
+  assert.equal(players.some((p) => p.fecapaId === 900900), false);
+});
+
+test('getRosters: NO FILE is an empty roster, other statuses are refusals, shape changes fail loudly', async () => {
+  const client = (body) => createClient({ fetch: fakeFetch([['/stats/', () => json(body)]]).fetch, delayMs: 0, token: 't', sources: ['sidgad-api'] });
+  assert.deepEqual((await client({ status: 'NO FILE' }).getRosters(4811)).players, []);
+  await assert.rejects(client({ status: 'INVALID DOMAIN' }).getRosters(4811), { code: 'SOURCE_REJECTED' });
+  await assert.rejects(client({ stats: { rosters: [{ player_id: 'x', team_id: '1' }] } }).getRosters(4811), { code: 'SOURCE_FORMAT_CHANGED' });
+  await assert.rejects(client({ stats: { rosters: [] } }).getRosters(0), { code: 'INVALID_ARGUMENT' });
+  // Without a token: the public config from the league's calendar page.
+  const { fetch, calls } = fakeFetch([
+    [(url) => url.startsWith(PORTAL), () => html(fixture('portal-config/2026-11-calendar-page.html'))],
+    ['/stats/', () => json({ stats: { rosters: [] } })],
+  ]);
+  assert.equal((await createClient({ fetch, delayMs: 0 }).getRosters(4811)).source, 'portal-config');
+  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), ['/', '/fecapa/v1/hp/stats/']);
+});

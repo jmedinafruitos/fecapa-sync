@@ -1,8 +1,15 @@
 # fecapa-sync
 
-Llibreria de codi obert per mantenir una còpia local en JSON dels calendaris i
-les actes d'hoquei patins de la FECAPA (Federació Catalana de Patinatge),
-independent de qualsevol club.
+Llibreria de codi obert per mantenir una còpia local en JSON dels calendaris,
+les actes i els jugadors d'hoquei patins de la FECAPA (Federació Catalana de
+Patinatge), independent de qualsevol club. També exporta els partits a un
+calendari ICS i les dades a CSV.
+
+> **⚠️ Dades personals de menors.** Les actes i el nivell `players` contenen
+> noms, gols i targetes de jugadors, la majoria menors d'edat. La còpia local és
+> per a la teva aplicació: **no la republiquis** ni la comparteixis en obert
+> (tampoc els fitxers CSV o JSON exportats). Si només necessites estadístiques,
+> posa `"players": { "names": "none" }` (o `"initials"`) i no es desarà cap nom.
 
 > **Estat:** pre-1.0. L'API pot canviar entre versions 0.x. Encara no està
 > publicada a npm. Vegeu [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -92,9 +99,11 @@ Els filtres es combinen: club + categoria són les lligues d'aquest club en
 aquesta categoria. Amb `leagues` numèriques i sense noms, no cal cap nivell
 de descoberta (com a la 0.2).
 
-- `levels`: `leagues`, `categories`, `teams`, `clubs`, `games` i `actas`
-  (`actas` activa `games`; un àmbit per club o categoria activa els nivells
-  que necessita). `players` arriba a la 0.4.
+- `levels`: `leagues`, `categories`, `teams`, `clubs`, `games`, `actas` i
+  `players` (`players` activa `actas`, que activa `games`; un àmbit per club o
+  categoria activa els nivells que necessita).
+- `players`: `{ "names": "full" | "initials" | "none", "rosters": false }`.
+  Vegeu [Jugadors](#jugadors-04).
 - `token`: millor a la variable d'entorn `FECAPA_SIDGAD_TOKEN`. Sense token es
   fa servir la configuració pública del portal. No publiquis mai un token.
 
@@ -110,6 +119,10 @@ del cap de setmana, dijous pels canvis de calendari):
 ```cron
 0 3 * * 1,4  cd /srv/app && npx fecapa-sync sync >> fecapa-sync.log 2>&1
 ```
+
+`sync` només mostra les notes de configuració («levels.x turned on…»,
+«scope → …») a `init`, quan canvien respecte de l'execució anterior o amb
+`--verbose`, perquè el registre del cron quedi net. `--json` les inclou sempre.
 
 `sync` surt amb codi 1 si la sincronització falla, 2 si la configuració és
 incorrecta (també un nom de club o categoria ambigu), i 0 en els altres casos
@@ -149,6 +162,7 @@ menors: no les republiquis.
 | `refresh.actas` (primer reintent d'una acta no disponible) | 12h | 6h |
 | `refresh.leagues` / `refresh.teams` | 7d | 24h |
 | `refresh.categories` / `refresh.clubs` | 30d | 7d |
+| `refresh.players` (plantilles, si `players.rosters`) | 7d | 24h |
 | `limits.delayMs` | 1000 ms | 1000 ms |
 | `limits.maxRequestsPerRun` | 200 | 5 |
 
@@ -163,6 +177,93 @@ partit canviï de data o d'hora. Una acta final no es torna a demanar mai. Un er
 (HTTP 429/5xx, rebuig de SIDGAD, canvi de format) atura la sincronització
 sense tocar les dades i posa una pausa d'1 h, 2 h, 4 h… fins a 7 dies. Vegeu
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Jugadors (0.4)
+
+Amb `"levels": { "players": true }` la llibreria desa
+`fecapa-data/2026-2027/players.json`, un registre per jugador amb l'id de
+federació com a clau. **No costa cap petició**: es construeix a partir de les
+actes ja desades, a cada execució.
+
+- `name` (el darrer que s'ha vist) i `aliases` (grafies anteriors, si la
+  federació canvia el nom).
+- `teams` (id, nom, lligues, partits), `teamIds`, `leagueIds` i `season`.
+- `stats` de la temporada: `games`, `goals`, `yellowCards`, `blueCards`,
+  `redCards` i `gamesAsGoalkeeper`. Es recalculen sempre des de les actes, així
+  que una acta no es compta mai dues vegades.
+- `isGoalkeeper`: `true` si ha sortit com a porter («P») en alguna acta de la
+  temporada.
+- `gender`: `female` (inferit) si ha jugat amb un equip femení (categoria FEM,
+  lliga o grup «Femenina», o l'etiqueta FEMENINA de SIDGAD); si no, `unknown`.
+  Mai «masculí»: hi ha lligues mixtes.
+- `firstSeenAt`/`updatedAt`, i `removedAt` si deixa d'aparèixer.
+
+Amb un àmbit per club o equip només es desen els jugadors d'aquests equips.
+
+**Plantilles (opcional).** Amb `"players": { "rosters": true }` també es
+demana la plantilla de cada lliga de l'àmbit (una petició per lliga cada
+`refresh.players`, per defecte 7 dies, mínim 24 h). Així apareixen els jugadors
+inscrits que encara no han jugat (`sources: ["rosters"]`). Les estadístiques
+continuen sortint només de les actes.
+
+**Privacitat.** `"players": { "names": "initials" }` desa només inicials
+(«J. P. T.») i `"none"` cap nom: només ids i estadístiques. S'aplica a
+`players.json`, a les alineacions de les actes i a les plantilles; si canvies a
+una opció més estricta, la propera execució reescriu el que ja hi havia, sense
+fer cap petició. Tornar a `"full"` no recupera els noms esborrats.
+
+## Exportar (0.4)
+
+`export` llegeix la còpia local (mai la xarxa) i escriu JSON, CSV o, per als
+partits, un calendari ICS. Els filtres accepten ids o noms, com `teams`:
+
+```bash
+npx fecapa-sync export --level games --format ics --club "CP Exemple" --category Benjamí --out benjami.ics
+npx fecapa-sync export --level games --format ics --team 900101 --out equip.ics
+npx fecapa-sync export --level players --format csv --team "CP Exemple B" > jugadors.csv
+npx fecapa-sync export --level teams --format json --league 4811
+```
+
+Nivells: `games`, `actas`, `players`, `teams`, `clubs`, `leagues`. Sense
+`--out` el resultat va a la sortida estàndard i el resum a la d'error. Des del
+codi: `await sync.export({ level: "games", format: "ics", club: "CP Exemple" })`
+retorna `{ content, records, skipped, skippedNoDate, skippedNoTime, notes }`.
+
+**Calendari per subscriure-s'hi.** Executa l'export just després del `sync` al
+mateix cron i serveix el fitxer amb el teu servidor web (la llibreria no
+allotja res). El fitxer s'escriu de manera atòmica, així que el servidor no en
+veu mai mig.
+
+```cron
+0 3 * * 1,4  cd /srv/app && npx fecapa-sync sync >> fecapa-sync.log 2>&1 && npx fecapa-sync export --level games --format ics --club "CP Exemple" --out /var/www/calendari/exemple.ics
+```
+
+Cada partit té un `UID` estable i l'hora en UTC; `SEQUENCE` augmenta amb cada
+canvi de data, hora o pista, perquè les aplicacions de calendari l'actualitzin;
+un partit que desapareix del calendari surt com a `STATUS:CANCELLED`. Els
+partits sense data, o amb data però encara sense hora, no s'hi posen (no hi ha
+esdeveniments de dia sencer): el resum diu quants n'han quedat fora per cada
+motiu. Quan una sincronització posterior porta l'hora, el partit apareix al
+següent export amb el seu `UID` de sempre. Els exports JSON i CSV sí que els
+inclouen, amb l'hora buida. La pista és la del calendari
+o, si no n'hi ha, la de l'acta; la descripció porta la lliga, la jornada i el
+resultat.
+
+**Columnes CSV** (RFC 4180, UTF-8, capçalera, salts de línia CRLF; les llistes
+dins d'un camp van separades per `|`; l'ordre és estable i només s'hi afegiran
+columnes al final):
+
+| Nivell | Columnes |
+|---|---|
+| `games` | `key, matchId, competitionId, league, phaseId, phaseName, round, date, time, startsAt, homeId, homeName, awayId, awayName, venue, homeScore, awayScore, rescheduleCount, removedAt, updatedAt` |
+| `actas` (una fila per jugador) | `matchId, competitionId, phaseName, startsAt, homeId, homeName, awayId, awayName, homeScore, awayScore, side, teamId, playerId, playerName, isGoalkeeper, goals, yellowCards, blueCards, redCards` |
+| `players` | `id, name, aliases, gender, isGoalkeeper, games, goals, yellowCards, blueCards, redCards, gamesAsGoalkeeper, teamIds, teamNames, leagueIds, sources, firstSeenAt, updatedAt, removedAt` |
+| `teams` | `id, name, shortName, clubId, leagueIds, categories, gender, firstSeenAt, updatedAt, removedAt` |
+| `clubs` | `id, name, officialName, teamName, aliases, teamIds, leagueIds, categories, firstSeenAt, updatedAt, removedAt` |
+| `leagues` | `id, name, category, sidgadCategory, sidgadSex, zoneId, zoneName, gender, teamIds, groups, firstSeenAt, updatedAt, removedAt` |
+
+Els registres eliminats (`removedAt`) també s'exporten. Les exportacions amb
+noms de jugadors són dades personals de menors: no les publiquis.
 
 ## Client de baix nivell
 
@@ -192,8 +293,8 @@ try {
 
 `getReport(matchId, { idc, side })` retorna només un dels dos equips.
 `getLeagues()` retorna totes les competicions de totes les temporades amb els
-equips i els ids de club (una petició), i `getClubs()` els noms oficials dels
-clubs. Utilitats pures: `toStartsAt`, `currentSeason`, `sameFixture`,
+equips i els ids de club (una petició), `getClubs()` els noms oficials dels
+clubs i `getRosters(liga)` la plantilla d'una competició (una petició). Utilitats pures: `toStartsAt`, `currentSeason`, `sameFixture`,
 `matchPlayer`, `normalizePlayerName`, `categoryOf`, `normalizeCategory`,
 `inferGender`.
 
@@ -209,8 +310,14 @@ Consulteu també [`docs/HARDENING.md`](docs/HARDENING.md) per a la validació de
 ## English
 
 Open-source, club-agnostic TypeScript library that keeps a local JSON copy of
-FECAPA (Catalan roller skating federation) roller hockey fixtures and match
-reports ("actes").
+FECAPA (Catalan roller skating federation) roller hockey fixtures, match
+reports ("actes") and players, and exports games to an ICS calendar and data
+to CSV.
+
+> **⚠️ Personal data of minors.** Actes and the `players` level hold players'
+> names, goals and cards, and most players are minors. The store is for your
+> own application: **don't republish it**, nor the CSV/JSON exports. If you
+> only need stats, set `"players": { "names": "none" }` (or `"initials"`).
 
 **Status: pre-1.0.** The API may change between 0.x releases, and the package is
 not on npm yet. Install it from GitHub (`npm install github:jmedinafruitos/fecapa-sync`,
@@ -234,7 +341,7 @@ group named "Femenina" is `female`, everything else `unknown`, never male.
 
 **Sync.** Other scopes: `scope.leagues` (the portal's `liga` ids, or `"all"` for
 the whole federation), `scope.teams` (team ids). Filters intersect. Levels:
-`leagues`, `categories`, `teams`, `clubs`, `games`, `actas` (`players` in 0.4).
+`leagues`, `categories`, `teams`, `clubs`, `games`, `actas`, `players`.
 Then run `npx fecapa-sync sync` from cron once or twice a week, e.g.
 `0 3 * * 1,4`. In code: `createSync({ configPath })` or `createSync(configObject)`
 returns `init()`, `run()`, `status()` and `listLeagues()`, `listCategories()`,
@@ -255,13 +362,48 @@ stops the run without touching the data and backs off for 1 h, doubling up to
 `history` of previous date/time/venue values, a `rescheduled` flag and
 `removedAt` when they leave the calendar; leagues, teams and clubs get
 `removedAt` too. Actas hold both lineups with `isGoalkeeper`. `sync` exits 1
-on failure and 2 on a config error.
+on failure and 2 on a config error. It prints the setup notes ("levels.x turned
+on…", "scope → …") only on `init`, when they changed since the last run, or
+with `--verbose`; `--json` always has them.
+
+**Players (0.4).** `levels.players` writes `players.json` per season, keyed by
+federation player id, built from the stored actas at no request cost: latest
+`name` and earlier spellings in `aliases`, `teams`/`teamIds`/`leagueIds`,
+season `stats` (`games`, `goals`, `yellowCards`, `blueCards`, `redCards`,
+`gamesAsGoalkeeper`, recomputed from the actas every run so nothing is counted
+twice), `isGoalkeeper` (marked "P" in at least one acta), `gender` (`female`,
+inferred, when seen with a women's team; otherwise `unknown`, never male),
+`firstSeenAt`/`updatedAt`/`removedAt`. A club or team scope keeps only its
+teams' players. `players.rosters: true` (off by default) also fetches each
+scoped league's roster, one request per league every `refresh.players` (7d
+default, 24h floor), to list registered players who haven't played yet.
+`players.names`: `"full"` (default), `"initials"` or `"none"` (ids and stats
+only); it applies to `players.json`, the stored actas' lineups and rosters, and
+a stricter setting rewrites what is stored on the next run without a request.
+
+**Export (0.4).** `fecapa-sync export --level games|actas|players|teams|clubs|leagues
+--format json|csv|ics [--team …] [--club …] [--category …] [--league …] [--out file]`,
+or `sync.export({ level, format, team, club, category, league })`, reads the
+local store only. Filters take ids or names (an ambiguous name fails with the
+candidates). ICS is for games: stable `UID`s, UTC times, `SEQUENCE` that grows
+with each reschedule, removed games as `STATUS:CANCELLED`. Games without a
+date, or with a date but no time yet, are left out (no all-day events) and
+counted separately (`skippedNoDate`, `skippedNoTime`); once a later sync brings
+the time, the game appears in the next export with its usual `UID`. JSON and
+CSV exports still include them, with an empty time. For a
+calendar subscription, run the export from the same cron job right after
+`sync` and serve the file with your own web server (the file is written
+atomically), e.g. `npx fecapa-sync sync && npx fecapa-sync export --level games
+--format ics --club "CP Exemple" --out /var/www/cal/club.ics`. CSV is RFC 4180
+(UTF-8, header row, CRLF, lists joined with `|`) with the stable column order
+in the table above; removed records are exported too.
 
 **Client.** `createClient(options)` returns `getCalendar(idc)`,
 `getReport(matchId, { idc, side, expectTeams? })` and
 `getFullReport(matchId, { idc, expectTeams? })`, plus `getLeagues()` (every
-league of every season with teams and club ids, one request) and `getClubs()`
-(official club names). Report results carry a
+league of every season with teams and club ids, one request), `getClubs()`
+(official club names) and `getRosters(idc)` (one league's registered players,
+one request). Report results carry a
 `status` (`final`, `not-finished`, or `no-file` when SIDGAD has no acta yet).
 Each call reports which data source answered: the SIDGAD JSON API with your own
 token (`sidgad-api`), the public config embedded in the portal page
@@ -272,8 +414,8 @@ polite: honest User-Agent, one request at a time, a configurable delay between
 requests.
 
 **Sync rarely, not often.** Syncing everything often can get your IP blocked or
-overload FECAPA's servers for everyone. Actes include minors' data: keep the
-store for your own application. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+overload FECAPA's servers for everyone. Actes and players include minors'
+data: keep the store and its exports for your own application. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Llicència
 

@@ -52,10 +52,10 @@ test('init without a config file writes a template and makes no request', async 
 
 test('an invalid config exits 2 with a clear message', async () => {
   const dir = tempDir();
-  const file = writeConfig(dir, { scope: { leagues: [4811] }, levels: { games: true, players: true } });
+  const file = writeConfig(dir, { scope: { leagues: [4811] }, levels: { games: true }, players: { names: 'nickname' } });
   const result = await run(['sync', '--config', file]);
   assert.equal(result.code, 2);
-  assert.match(result.stderr, /"players" \(0\.4\)/);
+  assert.match(result.stderr, /players\.names/);
 });
 
 test('status reads the local store and exits 0', async () => {
@@ -93,4 +93,29 @@ test('sync exits 1 when the run fails', async () => {
   const result = await run(['sync', '--config', file]);
   assert.equal(result.code, 1);
   assert.match(result.stderr, /STORE_CORRUPT/);
+});
+
+test('sync prints setup notes only when they changed, on init or with --verbose; --json always has them', async () => {
+  const dir = tempDir();
+  const file = writeConfig(dir, { season: '2026/2027', dataDir: './store', scope: { leagues: [4811] }, levels: { actas: true } });
+  mkdirSync(path.join(dir, 'store'));
+  const notes = ['levels.games turned on because levels.actas needs it'];
+  const future = new Date(Date.now() + 3_600_000).toISOString();
+  const state = (stored) => writeFileSync(path.join(dir, 'store', 'state.json'), JSON.stringify({
+    version: 1, backoff: null, lastRun: null, notes: stored,
+    seasons: { '2026/2027': { levels: {}, games: { leagues: { 4811: { lastAttemptAt: null, lastSuccessAt: null, nextDueAt: future, source: null } } }, actas: { pending: {} } } },
+  }));
+  // Nothing is due, so none of these runs makes a request.
+  state(notes);
+  const quiet = await run(['sync', '--config', file]);
+  assert.equal(quiet.code, 0, quiet.stderr);
+  assert.match(quiet.stdout, /ok, 0 requests/);
+  assert.doesNotMatch(quiet.stdout, /note:/);
+  const verbose = await run(['sync', '--config', file, '--verbose']);
+  assert.match(verbose.stdout, /note: levels\.games turned on/);
+  const json = JSON.parse((await run(['sync', '--config', file, '--json'])).stdout);
+  assert.deepEqual([json.notes, json.notesChanged], [notes, false]);
+  state([]);
+  const changed = await run(['sync', '--config', file]);
+  assert.match(changed.stdout, /note: levels\.games turned on/);
 });

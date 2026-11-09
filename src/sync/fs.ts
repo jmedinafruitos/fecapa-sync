@@ -10,11 +10,16 @@ import { FecapaError } from "../errors.js";
  * one, never half of one.
  */
 export async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
+  await writeTextAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+/** Writes text atomically (same as `writeJsonAtomic`), e.g. an exported ICS file a web server is serving. */
+export async function writeTextAtomic(file: string, text: string): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   const handle = await open(temp, "w");
   try {
-    await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, "utf8");
+    await handle.writeFile(text, "utf8");
     await handle.sync();
   } finally {
     await handle.close();

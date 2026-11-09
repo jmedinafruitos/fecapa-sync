@@ -44,6 +44,8 @@ export {
   type Report,
   type ReportResult,
   type ReportStatus,
+  type RosterEntry,
+  type RostersResult,
   type Side,
   type SourceName,
   type TeamInfo,
@@ -75,8 +77,31 @@ export {
   type ResolvedConfig,
   type SyncConfig,
 } from "./sync/config.js";
-export { ACTA_GRACE_MS, ACTA_MAX_ATTEMPTS, ACTA_MAX_RETRY_SPACING_MS, type ActaRecord, type PendingActa } from "./sync/actas.js";
+export { ACTA_GRACE_MS, ACTA_MAX_ATTEMPTS, ACTA_MAX_RETRY_SPACING_MS, type ActaRecord, type PendingActa, type StoredParticipant } from "./sync/actas.js";
+export {
+  initials,
+  NAME_MODES,
+  type NameMode,
+  type PlayerRecord,
+  type PlayersFile,
+  type PlayerStats,
+  type PlayerTeam,
+  type RosterFile,
+} from "./sync/players.js";
 export { discover, type DiscoverOptions, type Discovery } from "./sync/discover.js";
+export {
+  CSV_COLUMNS,
+  EXPORT_FORMATS,
+  EXPORT_LEVELS,
+  exportSnapshot,
+  type ExportFormat,
+  type ExportLevel,
+  type ExportOptions,
+  type ExportResult,
+  type StoreSnapshot,
+} from "./sync/export.js";
+export { csvField, toCsv, type CsvValue } from "./export/csv.js";
+export { escapeText, foldLine, gameUid, gamesToIcs, icsSkipReason, type IcsGameExtra, type IcsOptions, type IcsResult } from "./export/ics.js";
 export { type DirectoryView, type LeagueFilter, type TeamFilter } from "./sync/directory.js";
 export {
   clubNameFromTeams,

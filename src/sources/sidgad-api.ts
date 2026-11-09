@@ -1,6 +1,7 @@
 import { modalityOf, sidgadUrl } from "../parsers/portal-config.js";
 import { parseCalendarJson, parseClubsJson, parseLeaguesJson, parseReportOutcomeJson } from "../parsers/sidgad-json.js";
-import type { CalendarSource, DirectorySource, ReportSource } from "./types.js";
+import { parseRostersJson } from "../parsers/sidgad-stats.js";
+import type { CalendarSource, DirectorySource, ReportSource, RosterSource } from "./types.js";
 import { sidgadHeaders } from "./types.js";
 
 const NAME = "sidgad-api" as const;
@@ -33,5 +34,13 @@ export const sidgadApiDirectory: DirectorySource = {
   async getClubs(ctx) {
     const json = await ctx.http.getJson(sidgadUrl(ctx.apiUrl, "clubs", null, ctx.token!), NAME, sidgadHeaders(ctx));
     return parseClubsJson(json, NAME, modalityOf(ctx.apiUrl));
+  },
+};
+
+export const sidgadApiRosters: RosterSource = {
+  name: NAME,
+  canRun: (ctx) => Boolean(ctx.token),
+  async getRosters(competitionId, ctx) {
+    return parseRostersJson(await ctx.http.getJson(sidgadUrl(ctx.apiUrl, "stats", competitionId, ctx.token!), NAME, sidgadHeaders(ctx)), NAME);
   },
 };

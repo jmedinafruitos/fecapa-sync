@@ -41,7 +41,7 @@ export function apiBaseFromConfig(config: SidgadConfig): string {
 }
 
 /** `{apiBase}/{resource}/?id=…&jwt=…`, or `{apiBase}/{resource}/?jwt=…` for list resources without an id. */
-export function sidgadUrl(apiBase: string, resource: "calendar" | "report" | "leagues" | "clubs", id: number | null, token: string): string {
+export function sidgadUrl(apiBase: string, resource: "calendar" | "report" | "leagues" | "clubs" | "stats", id: number | null, token: string): string {
   const url = new URL(`${apiBase.replace(/\/$/, "")}/${resource}/`);
   url.search = new URLSearchParams(id === null ? { jwt: token } : { id: String(id), jwt: token }).toString();
   return url.toString();

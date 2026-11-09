@@ -50,12 +50,12 @@ levels it depends on.
 | `clubs` | Clubs (federation id, name) and the teams they field | `teams` | Grouped by the teams' `clubId`; official names from the SIDGAD `clubs` endpoint ✅, else derived from team names | Rarely |
 | `games` | Fixtures: date, time, venue, home/away, match id, group/round, schedule history | `leagues` (only for a scope by name or `"all"`) | SIDGAD `calendar` endpoint ✅ | Dates and times shift during the season |
 | `actas` | Final score, both lineups (goalkeepers marked), goals and cards per game | `games` | SIDGAD `report` endpoint ✅ | Fetched once per game after it ends, then final |
-| `players` | Players (federation id, name, team, season) | `actas` | Collected from actes at no extra request cost; a `/player/` page exists on the portal (**to investigate**) | As actes arrive |
+| `players` | Players (federation id, name, aliases, teams and leagues, season stats, goalkeeper, gender) | `actas` | Collected from the stored actes at no request cost ✅; optionally the per-league roster from the SIDGAD `stats` endpoint (`players.rosters`) ✅ | As actes arrive; rosters every `refresh.players` |
 
 `calendar` and `report` work since 0.1 (`getCalendar`, `getReport`); `games`
 and `actas` sync since 0.2; `leagues` and `clubs` (`getLeagues`, `getClubs`)
-and the four discovery levels since 0.3. Enabling `players` fails with a
-message naming the milestone it's planned for.
+and the four discovery levels since 0.3; `players` and rosters (`getRosters`)
+since 0.4.
 
 Leagues, categories and teams come from **one** `leagues` request, made when
 any of those enabled levels is due; club names come from one `clubs` request.
@@ -67,19 +67,27 @@ No calendar is fetched for discovery. Request cost of `init`:
   are due; the two list requests only every 7 and 30 days.
 - **Federation-wide** (`scope.leagues: "all"`): 2 + one calendar per league
   (58 in 2026/2027), plus every due acta (budget-limited, continues next run).
+- **Players:** the `players` level itself costs **0 requests**; it is rebuilt
+  from the stored actes on every run. With `players.rosters: true`, add **one
+  `stats` request per league in scope** on `init` and then every
+  `refresh.players` (7d default, 24h floor). One club in one category is
+  typically 1–2 extra requests a week; federation-wide, 58. Without a token the
+  public config read for the calendars is reused, so rosters add no page
+  request. A large youth league answers about 1 MB.
 
 ## Configuration
 
 A config file (`fecapa-sync.config.json`, plain JSON) or the same object passed
-in code. This is the 0.3 shape:
+in code. This is the 0.4 shape:
 
 ```json
 {
   "season": "2026/2027",
   "dataDir": "./fecapa-data",
   "scope": { "clubs": ["<club name>"], "categories": ["Benjamí"] },
-  "levels": { "games": true, "actas": true },
-  "refresh": { "games": "24h", "actas": "12h" },
+  "levels": { "games": true, "actas": true, "players": true },
+  "players": { "names": "full", "rosters": false },
+  "refresh": { "games": "24h", "actas": "12h", "players": "7d" },
   "limits": { "maxRequestsPerRun": 200, "delayMs": 1000 },
   "token": null
 }
@@ -99,9 +107,14 @@ in code. This is the 0.3 shape:
 - Filters intersect: clubs + categories = that club's leagues in those
   categories, and only its teams' games. With only explicit league ids no
   discovery level is needed (0.2 configs keep working).
-- `levels`: a level turns on the levels it depends on (`actas` → `games`,
-  `clubs` → `teams` → `leagues`, `categories` → `leagues`); a scope by name
-  turns on what it is resolved against. `players` (0.4) is refused for now.
+- `levels`: a level turns on the levels it depends on (`players` → `actas` →
+  `games`, `clubs` → `teams` → `leagues`, `categories` → `leagues`); a scope by
+  name turns on what it is resolved against.
+- `players.names`: `"full"` (default), `"initials"` (`"J. P. T."`) or `"none"`
+  (ids and stats only). Applies to `players.json`, the lineups of stored actes
+  and stored rosters; a stricter value rewrites what is stored on the next run
+  (no request). `players.rosters`: also fetch per-league rosters (default
+  false).
 - `token`: prefer the `FECAPA_SIDGAD_TOKEN` environment variable. Without a
   token the public portal config is used.
 
@@ -115,11 +128,9 @@ These are global library defaults, the same for every user.
 | `refresh.actas` (first retry of an acta that wasn't available) | 12h | 6h |
 | `limits.delayMs` (pause between requests) | 1000 ms | 1000 ms |
 | `limits.maxRequestsPerRun` | 200 | 5 (lower is an error) |
-
 | `refresh.leagues` / `refresh.teams` | 7d | 24h |
 | `refresh.categories` / `refresh.clubs` | 30d | 7d |
-
-`players` (0.4): 24h floor, 7d default.
+| `refresh.players` (rosters, per league; only with `players.rosters`) | 7d | 24h |
 
 - **Actas:** requested 3 h after kickoff (or the end of the day + 3 h when the
   time isn't published). If the acta isn't there yet (`not-finished` or
@@ -153,8 +164,9 @@ fecapa-data/
     games/<idc>.json      # 0.2
     actas/<matchId>.json  # 0.2
     leagues.json  categories.json  teams.json  clubs.json   # 0.3, keyed by federation id
-    players.json                                            # 0.4
-  state.json        # last sync per league, next due time, pending actas, backoff, last run
+    players.json                                            # 0.4, keyed by federation player id
+    rosters/<idc>.json                                      # 0.4, only with players.rosters
+  state.json        # last sync per league and roster, next due time, pending actas, backoff, last run and its notes
   sync.lock
 ```
 
@@ -172,6 +184,14 @@ fecapa-data/
   venue and group name, and the source that answered.
 - Leagues, categories, teams and clubs have `firstSeenAt`/`updatedAt` and get
   `removedAt` when they disappear; they are never deleted.
+- A player has `name` (latest seen) and `aliases` (earlier spellings), `teams`
+  (id, name, leagues, games, `inRoster`, gender), `teamIds`, `leagueIds`,
+  `season`, `stats` (`games`, `goals`, `yellowCards`, `blueCards`, `redCards`,
+  `gamesAsGoalkeeper`), `isGoalkeeper`, `gender`/`genderSource` and `sources`
+  (`actas`, `rosters`). Stats are recomputed from the stored actes on every
+  run, so an acta is never counted twice. A player who is no longer in any
+  stored acta or roster of the scope gets `removedAt`. With a club or team
+  scope only those teams' players are kept.
 - Every sync returns a **changeset** (created / updated / removed per level).
   Your application can apply it instead of re-reading everything.
 - Writes are atomic (write to a temp file, then rename), so a crash never
@@ -192,6 +212,7 @@ result.changes.games.updated;       // the changeset
 const status = await sync.status(); // last/next sync per level, pending actas, backoff (no network)
 await sync.listClubs();             // also listLeagues, listCategories, listTeams({ league, club, category }),
 await sync.findClub("exemple");     // findTeam: read the local store; STORE_EMPTY before init
+await sync.export({ level: "games", format: "ics", club: "CP Exemple" }); // local store only; { content, records, skipped, skippedNoDate, skippedNoTime, notes }
 const live = await discover();      // live lists for choosing a scope before init (2–3 requests)
 ```
 
@@ -202,12 +223,24 @@ npx fecapa-sync status [--config …] [--json]
 npx fecapa-sync leagues|categories|clubs [--json] [--live]
 npx fecapa-sync teams [--club …] [--category …] [--league …] [--json] [--live]
 npx fecapa-sync find <query> [--json] [--live]          # local store; --live asks SIDGAD
-npx fecapa-sync export --level games --format json|csv|ics [--team <id>]   # 0.4
+npx fecapa-sync export --level games|actas|players|teams|clubs|leagues \
+  --format json|csv|ics [--team …] [--club …] [--category …] [--league …] [--out file]   # 0.4, local store only
 ```
 
 `sync` exits 1 when the run failed, 2 on usage or config errors, and 0
 otherwise (including nothing due, a spent budget, an active backoff or another
-run holding the lock).
+run holding the lock). It prints the setup notes only on `init`, when they
+changed since the last run, or with `--verbose` (`--json` always has them).
+
+ICS export (games only): `UID` from the league and the game's store key (match
+id, or the fixture key), `DTSTART`/`DTEND` in UTC, `SUMMARY` "Home - Away", `LOCATION` from the calendar or else
+the acta, `SEQUENCE` = schedule history length (+1 once removed), removed games
+as `STATUS:CANCELLED`. Games without a date, or with a date but no published
+time, are left out (no all-day events) and counted separately; once a sync
+brings the time they appear with their usual `UID`. JSON and CSV keep them,
+with an empty time. CRLF, folding
+at 75 octets, TEXT escaping. CSV: RFC 4180, header row, fixed column order
+(listed in the README).
 
 The low-level client stays available: `createClient().getCalendar()`,
 `getReport()` (one side) and, since 0.2, `getFullReport()` (both lineups in
@@ -221,7 +254,7 @@ one request). Report results carry a `status`: `final`, `not-finished` or
 | **0.1** ✅ | Client: calendar + acta, three sources tried in order, zod validation, typed errors, polite client | Fixture tests and CI green (PR #1) |
 | **0.2** ✅ | Sync engine: config file, local JSON store, `state.json`, minimum intervals, request budget, backoff, lock, changesets. Levels `games` and `actas`. CLI `init`/`sync`/`status` | A cron job keeps a team's games and actes up to date; a second run with nothing due makes 0 requests (PR #3) |
 | **0.3** ✅ | `leagues`, `categories`, `teams`, `clubs` from the SIDGAD `leagues`/`clubs` lists; scope by club or category name; discovery API and CLI | A new user can go from a club or category name to synced games without knowing any id |
-| **0.4** | `players` (from actes; the `/player/` page if useful). `export` to JSON/CSV/ICS | A team's ICS calendar from the README alone |
+| **0.4** ✅ | `players` from actes (+ opt-in per-league rosters), `players.names` privacy option, `export` to JSON/CSV/ICS, quieter cron output | A team's ICS calendar from the README alone |
 | **1.0** | Contributions and release: `capture` (anonymised fixtures), weekly `live-canary` that opens a `source-drift` issue, CONTRIBUTING with a "FECAPA changed" playbook, issue templates, changesets, npm publish | Published on npm; a simulated format change opens an issue |
 
 ## Principles
@@ -303,9 +336,27 @@ competitions only).
   one-letter suffixes removed (`"X B"`, `"X 'A'"`, `"X A A"`), the most used
   spelling winning. Club names also vary between a club's teams (sponsors,
   accents), so every derived name is kept as an alias for matching.
-- **No roster or club pages.** The team page is built from `standing`,
-  `calendar` and `stats` (`stats.rosters` lists players per team: a lead for
-  0.4). There is no endpoint per club or team.
+- **No club or team endpoints.** The team page is built from `standing`,
+  `calendar` and `stats`. There is no endpoint per club or team.
+- **Rosters.** The portal's roster view ("Plantilles") and team page read
+  `GET {api}/stats/?id=<idc>&jwt=…` (one request per league, cached by the
+  page): `{"stats": {goals, asist, blue_cards, direct, penals, rosters, staff}}`.
+  The first five are per-stat rankings with the same row shape as `rosters`.
+  A `rosters` row has `team_id` (the league's team ids, as in `leagues` and
+  `calendar`), `team_name`, `team_logo`, `player_id` (the acta's player id),
+  `player_name` (`"SURNAME(S),GIVEN"`), `player_flag`, `played`, `goals`,
+  `asist`, `penals`, `direct`, `blue_cards`, `red_cards` and percentages; no
+  yellow cards and no goalkeeper flag. Players registered but not yet played
+  have `played: null` and empty stats: in a large youth league (66 teams) 383
+  of 990 rows, 833 distinct players, 130 of them in more than one team; in a
+  senior league 220 of 465. So rosters **do** list players who haven't played,
+  which the actes can't. The portal also reads an optional `stats.goalies`
+  list (absent in both leagues checked) and treats a player in both lists as a
+  goalkeeper; the library takes goalkeepers from the actes only. `staff` lists
+  coaches and delegates (adults' personal data, with a `role` that was always
+  null); it is never read. An unknown id answers `{"status":"NO FILE"}`, read
+  as an empty roster. The answer is about 1 MB for a large youth league, so
+  rosters are opt-in and refreshed weekly by default.
 - **Categories.** SIDGAD's `nombre_categoria` was seen as PREBENJAMI,
   PREBENJAMÍ INICIACIÓ, BENJAMI, ALEVÍ, INFANTIL, JUVENIL, JUNIOR, VETERANS,
   NACIONAL/PRIMERA/SEGONA/TERCERA CATALANA (and … FEMENÍ), OK LIGA PLATA and
@@ -335,7 +386,8 @@ competitions only).
 
 ## Open questions
 
-- Rosters: `stats.rosters` (one request per league) or the `/player/` page for
-  the 0.4 `players` level.
+- **Player page.** The portal has a player card script
+  (`player/sidgad-player-ficha.js`); its endpoint and whether it adds anything
+  beyond actes and rosters (e.g. earlier seasons) wasn't checked. Not used.
 - **Other modalities:** the SIDGAD path includes a client and a modality
   (`fecapa`/`hp`). Making them options may support other sports. Not verified.

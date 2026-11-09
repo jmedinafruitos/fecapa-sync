@@ -75,7 +75,7 @@ test('a second run with nothing due makes 0 HTTP requests', async () => {
   assert.equal(result.requests, 0);
   assert.equal(result.status, 'ok');
   const none = { created: [], updated: [], removed: [] };
-  assert.deepEqual(result.changes, { leagues: none, categories: none, teams: none, clubs: none, games: none, actas: none });
+  assert.deepEqual(result.changes, { leagues: none, categories: none, teams: none, clubs: none, games: none, actas: none, players: none });
   // Status reads local files only.
   const status = await sync.status();
   assert.equal(api.calls.length, before);
@@ -387,4 +387,20 @@ test('a corrupt state file is STORE_CORRUPT, never silently reset', async () => 
   await assert.rejects(sync.run(), { code: 'STORE_CORRUPT' });
   assert.equal(readFileSync(path.join(dataDir, 'state.json'), 'utf8'), '{"nope":');
   assert.equal(existsSync(path.join(dataDir, 'sync.lock')), false);
+});
+
+test('notesChanged is true on the first run and when the notes change, false on unchanged runs', async () => {
+  const { sync, api, clock, dataDir } = setup({ config: { ...CONFIG, levels: { actas: true } } });
+  const first = await sync.init();
+  assert.ok(first.notes.some((note) => /levels\.games turned on/.test(note)));
+  assert.equal(first.notesChanged, true);
+  clock.advance(HOUR);
+  const second = await sync.run();
+  assert.deepEqual(second.notes, first.notes);
+  assert.equal(second.notesChanged, false);
+  clock.advance(HOUR);
+  const { sync: changed } = testSync({ ...CONFIG, levels: { actas: true }, refresh: { games: '1h' } }, { api, clock, dataDir });
+  const third = await changed.run();
+  assert.equal(third.notesChanged, true);
+  assert.ok(third.notes.some((note) => /refresh\.games "1h" raised/.test(note)));
 });
