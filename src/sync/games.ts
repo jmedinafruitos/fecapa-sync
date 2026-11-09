@@ -42,6 +42,12 @@ export type GameRecord = {
   rescheduled: boolean;
   /** When the game was last seen missing from its league calendar, or null. Removed games are kept. */
   removedAt: string | null;
+  /**
+   * Grows by one on every change a calendar app must see: a schedule change,
+   * a removal or a reappearance. Never decreases; the ICS `SEQUENCE`. Absent
+   * in stores written before 1.0 (see `gameRevision`).
+   */
+  revision?: number;
   firstSeenAt: string;
   updatedAt: string;
 };
@@ -62,6 +68,8 @@ export type MergeResult = {
 
 const SCHEDULE_FIELDS = ["date", "time", "startsAt", "venue", "homeId", "awayId"] as const;
 const OTHER_FIELDS = ["matchId", "phaseId", "phaseName", "round", "homeName", "awayName"] as const;
+/** Fields besides the schedule that an exported calendar event shows. */
+const SHOWN_FIELDS = ["homeName", "awayName", "phaseName", "round"] as const;
 
 function keyOf(match: Match): string {
   return match.matchId !== undefined
@@ -89,9 +97,21 @@ function newRecord(match: Match, now: string): GameRecord {
     rescheduleCount: 0,
     rescheduled: false,
     removedAt: null,
+    revision: 0,
     firstSeenAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * The game's revision. Stores written before 1.0 have no counter: it is then
+ * derived as the old `SEQUENCE` was (history length, +1 once removed), so a
+ * feed already in a calendar app never goes backwards on upgrade.
+ */
+export function gameRevision(game: Pick<GameRecord, "history" | "removedAt" | "revision">): number {
+  return typeof game.revision === "number" && Number.isSafeInteger(game.revision) && game.revision >= 0
+    ? game.revision
+    : game.history.length + (game.removedAt !== null ? 1 : 0);
 }
 
 const changedFrom = (previous: string | null, next: string | null) => previous !== null && previous !== next;
@@ -107,8 +127,13 @@ function applyMatch(record: GameRecord, match: Match, now: string): GameRecord |
     history: record.history,
     rescheduleCount: record.rescheduleCount,
     rescheduled: record.rescheduled,
+    revision: gameRevision(record),
     firstSeenAt: record.firstSeenAt,
   };
+  // Anything a calendar event shows (schedule, teams, group, round) or a
+  // reappearance bumps the revision once.
+  const shownChanged = scheduleChanged || SHOWN_FIELDS.some((field) => record[field] !== next[field]);
+  if (shownChanged || record.removedAt !== null) updated.revision = gameRevision(record) + 1;
   if (scheduleChanged) {
     updated.history = [...record.history, {
       date: record.date, time: record.time, startsAt: record.startsAt, venue: record.venue,
@@ -173,7 +198,7 @@ export function mergeCalendar(existing: Record<string, GameRecord>, matches: Mat
   }
   for (const record of unmatched.values()) {
     if (record.removedAt === null) {
-      const gone = { ...record, removedAt: now, updatedAt: now };
+      const gone = { ...record, removedAt: now, revision: gameRevision(record) + 1, updatedAt: now };
       games[gone.key] = gone;
       removed.push(gone);
     } else {

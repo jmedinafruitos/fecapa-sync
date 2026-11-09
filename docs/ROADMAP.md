@@ -234,7 +234,7 @@ changed since the last run, or with `--verbose` (`--json` always has them).
 
 ICS export (games only): `UID` from the league and the game's store key (match
 id, or the fixture key), `DTSTART`/`DTEND` in UTC, `SUMMARY` "Home - Away", `LOCATION` from the calendar or else
-the acta, `SEQUENCE` = schedule history length (+1 once removed), removed games
+the acta, `SEQUENCE` = the game's revision (grows on every reschedule, removal, reappearance or change of teams, group or round; never decreases), removed games
 as `STATUS:CANCELLED`. Games without a date, or with a date but no published
 time, are left out (no all-day events) and counted separately; once a sync
 brings the time they appear with their usual `UID`. JSON and CSV keep them,

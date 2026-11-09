@@ -239,7 +239,8 @@ veu mai mig.
 ```
 
 Cada partit té un `UID` estable i l'hora en UTC; `SEQUENCE` augmenta amb cada
-canvi de data, hora o pista, perquè les aplicacions de calendari l'actualitzin;
+canvi de data, hora, pista o equips, i quan un partit desapareix o torna a
+aparèixer (mai no baixa), perquè les aplicacions de calendari l'actualitzin;
 un partit que desapareix del calendari surt com a `STATUS:CANCELLED`. Els
 partits sense data, o amb data però encara sense hora, no s'hi posen (no hi ha
 esdeveniments de dia sencer): el resum diu quants n'han quedat fora per cada
@@ -386,7 +387,7 @@ a stricter setting rewrites what is stored on the next run without a request.
 or `sync.export({ level, format, team, club, category, league })`, reads the
 local store only. Filters take ids or names (an ambiguous name fails with the
 candidates). ICS is for games: stable `UID`s, UTC times, `SEQUENCE` that grows
-with each reschedule, removed games as `STATUS:CANCELLED`. Games without a
+with each reschedule, removal and reappearance and never goes down, removed games as `STATUS:CANCELLED`. Games without a
 date, or with a date but no time yet, are left out (no all-day events) and
 counted separately (`skippedNoDate`, `skippedNoTime`); once a later sync brings
 the time, the game appears in the next export with its usual `UID`. JSON and

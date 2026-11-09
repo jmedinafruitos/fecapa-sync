@@ -1,4 +1,4 @@
-import type { GameRecord } from "../sync/games.js";
+import { gameRevision, type GameRecord } from "../sync/games.js";
 import { VERSION } from "../version.js";
 
 /** Escapes an RFC 5545 TEXT value: backslash, semicolon, comma and line breaks. */
@@ -81,8 +81,9 @@ export const gameUid = (game: Pick<GameRecord, "competitionId" | "key">) => `fec
 
 /**
  * An iCalendar (RFC 5545) feed of games. Times are UTC. A game without a
- * date or without a published time is left out and counted (`icsSkipReason`). `SEQUENCE` grows with the game's schedule history (and once more
- * when it leaves the calendar), so calendar apps apply reschedules; a removed
+ * date or without a published time is left out and counted (`icsSkipReason`). `SEQUENCE` is the game's
+ * revision (`gameRevision`): it grows on every reschedule, removal and
+ * reappearance and never goes down, so calendar apps apply each one; a removed
  * game is exported with `STATUS:CANCELLED` instead of being dropped.
  */
 export function gamesToIcs(games: readonly GameRecord[], options: IcsOptions = {}): IcsResult {
@@ -115,7 +116,7 @@ export function gamesToIcs(games: readonly GameRecord[], options: IcsOptions = {
       `UID:${gameUid(game)}`,
       `DTSTAMP:${utcStamp(game.updatedAt)}`,
       `LAST-MODIFIED:${utcStamp(game.updatedAt)}`,
-      `SEQUENCE:${game.history.length + (game.removedAt !== null ? 1 : 0)}`,
+      `SEQUENCE:${gameRevision(game)}`,
     );
     const end = new Date(Date.parse(game.startsAt) + duration * 60_000).toISOString();
     lines.push(`DTSTART:${utcStamp(game.startsAt)}`, `DTEND:${utcStamp(end)}`);
