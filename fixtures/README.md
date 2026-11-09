@@ -36,3 +36,9 @@ one live request, saved anonymised (people always; teams, clubs and venues
 unless `--keep-teams`, which is for local debugging only and must never be
 committed). The test also checks that every person id in a JSON fixture is
 ≥ 900000 and that nothing looks like a JWT. See `CONTRIBUTING.md`.
+
+`sidgad-api/2026-11-calendar-grouped.json` (a full public youth league
+calendar with five groups and about 400 rows) and
+`sidgad-api/2026-11-report-officials.json` (a finished report that also lists
+match officials, team short names and penalty counts) were made with
+`capture` from live answers: every person, team, club and venue is invented.
