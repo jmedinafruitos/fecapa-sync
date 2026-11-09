@@ -57,6 +57,9 @@ test('players (0.4) turns on actas and games; names and rosters options with a 2
   assert.throws(() => resolve({ ...base, players: { names: 'nickname' } }), { code: 'INVALID_CONFIG', message: /players\.names/ });
   assert.throws(() => resolve({ ...base, levels: { players: true, actas: false } }), { code: 'INVALID_CONFIG', message: /levels\.players needs levels\.actas/ });
   assert.ok(resolve({ ...base, players: { rosters: true } }).notes.some((note) => /players\.rosters has no effect/.test(note)));
+  // A scope by name turns on what it is resolved against, with players alone too.
+  assert.deepEqual(resolve({ scope: { clubs: ['CP Exemple'] }, levels: { players: true } }).levels,
+    { leagues: true, categories: false, teams: true, clubs: true, games: true, actas: true, players: true });
   // Explicitly off is fine.
   assert.doesNotThrow(() => resolve({ ...base, levels: { games: true, leagues: false, players: false } }));
 });

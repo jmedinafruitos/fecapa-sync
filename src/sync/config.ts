@@ -159,7 +159,8 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
   if (scope.categories.length) needed.push(["categories", "scope.categories"]);
   if (scope.clubs.length) needed.push(["clubs", "scope.clubs"]);
   if (scope.teams.length && !allLeagues && !scope.leagues.length) needed.push(["teams", "scope.teams without scope.leagues"]);
-  if (enabled.has("games") || enabled.has("actas")) {
+  // Every level that syncs games (games, actas, players) needs the scope resolved.
+  if (enabled.has("games") || enabled.has("actas") || enabled.has("players")) {
     for (const [level, reason] of needed) {
       if (enabled.has(level)) continue;
       if (config.levels?.[level] === false) throw invalid(`${reason} needs levels.${level}, which is set to false`, `levels.${level}`);
