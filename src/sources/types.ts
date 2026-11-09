@@ -1,6 +1,6 @@
 import type { HttpClient } from "../http.js";
 import type { FullReportRequest, ReportOutcome } from "../parsers/sidgad-json.js";
-import type { ClubInfo, LeagueInfo, Match, SourceName } from "../types.js";
+import type { ClubInfo, LeagueInfo, Match, RosterEntry, SourceName } from "../types.js";
 
 /** Everything a source needs for one client operation. */
 export type SourceContext = {
@@ -39,6 +39,13 @@ export interface DirectorySource {
   canRun(ctx: SourceContext): boolean;
   getLeagues(ctx: SourceContext): Promise<LeagueInfo[]>;
   getClubs(ctx: SourceContext): Promise<ClubInfo[]>;
+}
+
+/** Per-league rosters (`stats.rosters`). JSON sources only. */
+export interface RosterSource {
+  readonly name: SourceName;
+  canRun(ctx: SourceContext): boolean;
+  getRosters(competitionId: number, ctx: SourceContext): Promise<RosterEntry[]>;
 }
 
 /** The portal's competitions page (it lists every league; it also embeds the public API config). */

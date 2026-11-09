@@ -44,6 +44,8 @@ export {
   type Report,
   type ReportResult,
   type ReportStatus,
+  type RosterEntry,
+  type RostersResult,
   type Side,
   type SourceName,
   type TeamInfo,

@@ -2,7 +2,8 @@ import { isFecapaError } from "../errors.js";
 import { formatChanged } from "../parsers/common.js";
 import { apiBaseFromConfig, extractSidgadConfig, modalityOf, sidgadUrl } from "../parsers/portal-config.js";
 import { parseCalendarJson, parseClubsJson, parseLeaguesJson, parseReportOutcomeJson } from "../parsers/sidgad-json.js";
-import type { CalendarSource, DirectorySource, ReportSource, SourceContext } from "./types.js";
+import { parseRostersJson } from "../parsers/sidgad-stats.js";
+import type { CalendarSource, DirectorySource, ReportSource, RosterSource, SourceContext } from "./types.js";
 import { calendarPageUrl, homePageUrl, reportPageUrl, sidgadHeaders } from "./types.js";
 
 const NAME = "portal-config" as const;
@@ -68,5 +69,15 @@ export const portalConfigDirectory: DirectorySource = {
   getClubs(ctx) {
     return withConfig(homePageUrl(ctx.baseUrl), ctx, async ({ apiBase, token }) =>
       parseClubsJson(await ctx.http.getJson(sidgadUrl(apiBase, "clubs", null, token), NAME, sidgadHeaders(ctx)), NAME, modalityOf(apiBase)));
+  },
+};
+
+/** The portal's roster view ("Plantilles") reads `stats` for the league. The page config is shared with the calendars of the same run. */
+export const portalConfigRosters: RosterSource = {
+  name: NAME,
+  canRun: () => true,
+  getRosters(competitionId, ctx) {
+    return withConfig(calendarPageUrl(ctx.baseUrl, competitionId), ctx, async ({ apiBase, token }) =>
+      parseRostersJson(await ctx.http.getJson(sidgadUrl(apiBase, "stats", competitionId, token), NAME, sidgadHeaders(ctx)), NAME));
   },
 };

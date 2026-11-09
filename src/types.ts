@@ -154,3 +154,23 @@ export type ClubInfo = { id: number; name: string };
 export type LeaguesResult = { source: SourceName; leagues: LeagueInfo[] };
 
 export type ClubsResult = { source: SourceName; clubs: ClubInfo[] };
+
+/**
+ * A player registered with a team, from the per-league SIDGAD `stats`
+ * endpoint (`stats.rosters`). Lists players who haven't played yet too.
+ */
+export type RosterEntry = {
+  /** FECAPA player id, the same as `Participant.fecapaId`. */
+  fecapaId: number;
+  /** Team id, as in the league's calendar and the `leagues` list. */
+  teamId: number;
+  /** `GIVEN SURNAME(S)`, or null when SIDGAD has no name. */
+  name: string | null;
+  /** Games played according to SIDGAD (0 when it shows none). */
+  played: number;
+  goals: number;
+  blueCards: number;
+  redCards: number;
+};
+
+export type RostersResult = { source: SourceName; competitionId: number; players: RosterEntry[] };
