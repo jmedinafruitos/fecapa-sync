@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/jmedinafruitos/fecapa-sync/security/advisories/new
+    about: Report it privately, not in a public issue (see SECURITY.md).
+  - name: Contributing guide and "FECAPA changed" playbook
+    url: https://github.com/jmedinafruitos/fecapa-sync/blob/main/CONTRIBUTING.md
+    about: How to capture an anonymised fixture, write a failing test and fix a parser.

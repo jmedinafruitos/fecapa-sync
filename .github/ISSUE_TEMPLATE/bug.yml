@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in the library or CLI doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If FECAPA or SIDGAD changed a format, use the **FECAPA changed** template instead.
+        **Don't paste player names, exported files, store files or a SIDGAD token**: they hold minors' personal data. Use invented values.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      description: Command or code, and your config with `token` removed and any club name replaced by a placeholder if you prefer.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: fecapa-sync version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version and OS
+      placeholder: "Node 22.11, Ubuntu 24.04"
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or error code
+      description: The error code and message. Remove any names first.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This issue contains no personal data and no token.
+          required: true
