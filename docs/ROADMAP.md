@@ -44,28 +44,40 @@ levels it depends on.
 
 | Level | What it holds | Depends on | Source | Changes how often |
 |---|---|---|---|---|
-| `leagues` | Competitions for a season (id `idc`, name, phase) | — | **To investigate**: no index endpoint known yet | Start of season, phase changes |
-| `categories` | Age/level categories (Prebenjamí, Benjamí, …, Sènior) and which leagues belong to each | `leagues` | Derived from league names/metadata; **to investigate** | Once a season |
-| `teams` | Teams in each league (id, name) | `leagues` | Derived from league calendars (home/away ids and names) | Rarely within a season |
-| `clubs` | Clubs and the teams they field | `teams` | **To investigate**: club ids may exist in SIDGAD; otherwise grouped from team names | Rarely |
-| `games` | Fixtures: date, time, venue, home/away, match id, group/round, schedule history | `leagues` (explicit ids in 0.2) | SIDGAD `calendar` endpoint ✅ | Dates and times shift during the season |
+| `leagues` | Competitions for a season (id `idc`, name, category, zone, teams) and their groups | — | SIDGAD `leagues` endpoint ✅ (all seasons in one request); groups from the calendars the `games` level fetches | Start of season, phase changes |
+| `categories` | Normalised categories (Prebenjamí … Sènior, Veterans, Minifem, FEM11 … FEM19, `unknown`), their raw names and leagues | `leagues` | Derived from league names, SIDGAD's `nombre_categoria` and group names ✅ | Once a season |
+| `teams` | Teams (id, name, short name, club id, leagues, categories, gender) | `leagues` | SIDGAD `leagues` endpoint (`teams[]` per league) ✅ | Rarely within a season |
+| `clubs` | Clubs (federation id, name) and the teams they field | `teams` | Grouped by the teams' `clubId`; official names from the SIDGAD `clubs` endpoint ✅, else derived from team names | Rarely |
+| `games` | Fixtures: date, time, venue, home/away, match id, group/round, schedule history | `leagues` (only for a scope by name or `"all"`) | SIDGAD `calendar` endpoint ✅ | Dates and times shift during the season |
 | `actas` | Final score, both lineups (goalkeepers marked), goals and cards per game | `games` | SIDGAD `report` endpoint ✅ | Fetched once per game after it ends, then final |
 | `players` | Players (federation id, name, team, season) | `actas` | Collected from actes at no extra request cost; a `/player/` page exists on the portal (**to investigate**) | As actes arrive |
 
-The two ✅ sources work since 0.1 (`getCalendar`, `getReport`); `games` and
-`actas` sync since 0.2. Enabling any other level in 0.2 fails with a message
-naming the milestone it's planned for.
+`calendar` and `report` work since 0.1 (`getCalendar`, `getReport`); `games`
+and `actas` sync since 0.2; `leagues` and `clubs` (`getLeagues`, `getClubs`)
+and the four discovery levels since 0.3. Enabling `players` fails with a
+message naming the milestone it's planned for.
+
+Leagues, categories and teams come from **one** `leagues` request, made when
+any of those enabled levels is due; club names come from one `clubs` request.
+No calendar is fetched for discovery. Request cost of `init`:
+
+- **One club** (`scope.clubs` + `scope.categories`): 2 + one calendar per
+  league of that club in those categories (+1 for the portal page without a
+  token), plus its due actas. Later runs: one calendar per league when games
+  are due; the two list requests only every 7 and 30 days.
+- **Federation-wide** (`scope.leagues: "all"`): 2 + one calendar per league
+  (58 in 2026/2027), plus every due acta (budget-limited, continues next run).
 
 ## Configuration
 
 A config file (`fecapa-sync.config.json`, plain JSON) or the same object passed
-in code. This is the 0.2 shape:
+in code. This is the 0.3 shape:
 
 ```json
 {
   "season": "2026/2027",
   "dataDir": "./fecapa-data",
-  "scope": { "leagues": [4811], "teams": [] },
+  "scope": { "clubs": ["<club name>"], "categories": ["Benjamí"] },
   "levels": { "games": true, "actas": true },
   "refresh": { "games": "24h", "actas": "12h" },
   "limits": { "maxRequestsPerRun": 200, "delayMs": 1000 },
@@ -76,13 +88,20 @@ in code. This is the 0.2 shape:
 - `season` defaults to the current one (it changes on 1 July).
 - `dataDir` is relative to the config file (or to the working directory for an
   in-code config).
-- `scope.leagues`: competition ids (`liga` in the portal URL). Required in 0.2.
-  `scope.teams`: team ids; when set, only games involving one of them are
-  kept. `scope.categories` and `scope.clubs` arrive in 0.3 and are refused
-  until then.
-- `levels`: a level turns on the levels it depends on (`actas` → `games`).
-  `leagues`, `categories`, `teams`, `clubs` (0.3) and `players` (0.4) are
-  refused for now.
+- `scope.clubs`: club names or federation club ids. `scope.categories`:
+  category names or keys (any accent or case, Catalan or Spanish). Names are
+  resolved against the stored discovery levels; one that matches several
+  things or nothing fails the run (`INVALID_CONFIG`, exit 2) with the closest
+  candidates, keeps what was discovered and records no backoff. A template
+  placeholder such as `"<club name>"` fails before any request.
+- `scope.leagues`: competition ids (`liga` in the portal URL), or `"all"`.
+  `scope.teams`: team ids; only games involving one of them are kept.
+- Filters intersect: clubs + categories = that club's leagues in those
+  categories, and only its teams' games. With only explicit league ids no
+  discovery level is needed (0.2 configs keep working).
+- `levels`: a level turns on the levels it depends on (`actas` → `games`,
+  `clubs` → `teams` → `leagues`, `categories` → `leagues`); a scope by name
+  turns on what it is resolved against. `players` (0.4) is refused for now.
 - `token`: prefer the `FECAPA_SIDGAD_TOKEN` environment variable. Without a
   token the public portal config is used.
 
@@ -97,8 +116,10 @@ These are global library defaults, the same for every user.
 | `limits.delayMs` (pause between requests) | 1000 ms | 1000 ms |
 | `limits.maxRequestsPerRun` | 200 | 5 (lower is an error) |
 
-The floors for later levels are already fixed: `leagues` 24h (default 7d),
-`categories` 7d (30d), `teams` 24h (7d), `clubs` 7d (30d), `players` 24h (7d).
+| `refresh.leagues` / `refresh.teams` | 7d | 24h |
+| `refresh.categories` / `refresh.clubs` | 30d | 7d |
+
+`players` (0.4): 24h floor, 7d default.
 
 - **Actas:** requested 3 h after kickoff (or the end of the day + 3 h when the
   time isn't published). If the acta isn't there yet (`not-finished` or
@@ -131,7 +152,7 @@ fecapa-data/
   2026-2027/
     games/<idc>.json      # 0.2
     actas/<matchId>.json  # 0.2
-    leagues.json  categories.json  teams.json  clubs.json   # 0.3
+    leagues.json  categories.json  teams.json  clubs.json   # 0.3, keyed by federation id
     players.json                                            # 0.4
   state.json        # last sync per league, next due time, pending actas, backoff, last run
   sync.lock
@@ -149,6 +170,8 @@ fecapa-data/
   deleted.
 - An acta stores both lineups (`home`, `away`) with `isGoalkeeper`, the score,
   venue and group name, and the source that answered.
+- Leagues, categories, teams and clubs have `firstSeenAt`/`updatedAt` and get
+  `removedAt` when they disappear; they are never deleted.
 - Every sync returns a **changeset** (created / updated / removed per level).
   Your application can apply it instead of re-reading everything.
 - Writes are atomic (write to a temp file, then rename), so a crash never
@@ -167,12 +190,18 @@ const result = await sync.run();    // scheduled incremental sync; skips what is
 result.status;                      // "ok" | "partial" | "skipped" | "failed"
 result.changes.games.updated;       // the changeset
 const status = await sync.status(); // last/next sync per level, pending actas, backoff (no network)
+await sync.listClubs();             // also listLeagues, listCategories, listTeams({ league, club, category }),
+await sync.findClub("exemple");     // findTeam: read the local store; STORE_EMPTY before init
+const live = await discover();      // live lists for choosing a scope before init (2–3 requests)
 ```
 
 ```
 npx fecapa-sync init   [--config fecapa-sync.config.json]   # writes a template if the file is missing
 npx fecapa-sync sync   [--config …] [--json]                # call this from cron
 npx fecapa-sync status [--config …] [--json]
+npx fecapa-sync leagues|categories|clubs [--json] [--live]
+npx fecapa-sync teams [--club …] [--category …] [--league …] [--json] [--live]
+npx fecapa-sync find <query> [--json] [--live]          # local store; --live asks SIDGAD
 npx fecapa-sync export --level games --format json|csv|ics [--team <id>]   # 0.4
 ```
 
@@ -191,7 +220,7 @@ one request). Report results carry a `status`: `final`, `not-finished` or
 |---|---|---|
 | **0.1** ✅ | Client: calendar + acta, three sources tried in order, zod validation, typed errors, polite client | Fixture tests and CI green (PR #1) |
 | **0.2** ✅ | Sync engine: config file, local JSON store, `state.json`, minimum intervals, request budget, backoff, lock, changesets. Levels `games` and `actas`. CLI `init`/`sync`/`status` | A cron job keeps a team's games and actes up to date; a second run with nothing due makes 0 requests (PR #3) |
-| **0.3** | Investigate and add `leagues`, `categories`, `teams`, `clubs` | A new user can go from a club or category name to synced games without knowing any id |
+| **0.3** ✅ | `leagues`, `categories`, `teams`, `clubs` from the SIDGAD `leagues`/`clubs` lists; scope by club or category name; discovery API and CLI | A new user can go from a club or category name to synced games without knowing any id |
 | **0.4** | `players` (from actes; the `/player/` page if useful). `export` to JSON/CSV/ICS | A team's ICS calendar from the README alone |
 | **1.0** | Contributions and release: `capture` (anonymised fixtures), weekly `live-canary` that opens a `source-drift` issue, CONTRIBUTING with a "FECAPA changed" playbook, issue templates, changesets, npm publish | Published on npm; a simulated format change opens an issue |
 
@@ -252,22 +281,61 @@ competitions only).
   and added if missing from the roster. The old server-rendered acta has the
   same "P" in the second cell of a player row. Both parsers set
   `Participant.isGoalkeeper`.
-- **Gender.** There is no gender field anywhere. The only rule: teams in a
-  `FEM…` category, or in a league whose name contains "Femenina", are women's
-  teams. Everything else is unknown, because youth leagues can be mixed. This
-  needs the 0.3 league/category levels, so 0.2 only reserves the shape for team
-  records: `gender: "female" | "unknown"` with `genderSource: "inferred"`
-  (types `Gender`, `GenderInfo`).
-- **Club ids.** Calendar games carry `home_club_id`/`away_club_id`, and newer
-  reports `home_club_id`/`away_club_id` too. Not stored yet; a lead for the
-  0.3 `clubs` level.
+- **League list.** The portal's competitions page renders from
+  `GET {api}/leagues/?jwt=…` (no id): `{"idcs": [...]}` with every competition
+  of **every season** (574 rows, about 2.5 MB in November 2026; 58 for
+  2026/2027). Each row has `idc`, `nombre_idc`, `id_temp`/`nombre_temp`
+  (`"2026/2027"`), `id_zone`/`zone_name`, `id_categoria`/`nombre_categoria`,
+  `id_sexo`/`nombre_sexo`, `agrupada`, `ids_teams` and `teams[]` with
+  `teamId`, `name`, `clubId`, `name_short`, `team_logo`. Team ids in a
+  calendar matched the league's `teams` exactly, and so did the calendar's
+  `home_club_id`/`away_club_id`, so no calendar is needed for teams or clubs.
+  A `GET {api}/seasons/` (`{"temps": [{id_temp, nombre_temp}]}`) also exists;
+  not used. `ids_teams` sometimes disagrees with `teams`; `teams` is used.
+- **Club list.** `GET {api}/clubs/` (not used by the portal) returns
+  `{"clubes": [{id_club, nameclub, modals, logoclub}]}` for the whole
+  federation (428 rows). `modals` is a list such as `hp`, `3p`, `hl`,
+  `hp,hl`. **It also holds individual athletes' names** (other modalities), so
+  the client keeps only entries of its modality (`hp`) and the store keeps only
+  clubs that field a team. Official names look like `"<TOWN>, C.P."`. 11 of the
+  129 clubs with a team in 2026/2027 aren't listed (guest clubs from outside
+  Catalonia, national teams); their names come from their teams' names with
+  one-letter suffixes removed (`"X B"`, `"X 'A'"`, `"X A A"`), the most used
+  spelling winning. Club names also vary between a club's teams (sponsors,
+  accents), so every derived name is kept as an alias for matching.
+- **No roster or club pages.** The team page is built from `standing`,
+  `calendar` and `stats` (`stats.rosters` lists players per team: a lead for
+  0.4). There is no endpoint per club or team.
+- **Categories.** SIDGAD's `nombre_categoria` was seen as PREBENJAMI,
+  PREBENJAMÍ INICIACIÓ, BENJAMI, ALEVÍ, INFANTIL, JUVENIL, JUNIOR, VETERANS,
+  NACIONAL/PRIMERA/SEGONA/TERCERA CATALANA (and … FEMENÍ), OK LIGA PLATA and
+  OK LIGA FEMENÍ, and is empty (`id_categoria` "0") for cups, final phases and
+  tournaments (239 of 574 rows). Women's age leagues are named FEM 11 … FEM19
+  and MINIFEM but carry the mixed category (FEM 13 → ALEVÍ). So the league
+  name is read first, then SIDGAD's category: youth age groups, `senior`
+  (Nacional/Primera/Segona/Tercera Catalana, OK Lliga, Lliga Catalana,
+  Supercopa, Copa Generalitat), `veterans` (also MÀSTER), `minifem`,
+  `fem11`…`fem19` (with `ageGroup` pointing at the mixed one), and `unknown`
+  with the raw name for the rest (3 open tournaments in 2026/2027). Group
+  names ("BCN BENJAMÍ PLATA 1") carry the category too.
+- **Gender.** There is no gender field for teams or players. The rule: a
+  `FEM…` category, or a league or group whose name contains "Femenina", is
+  female; everything else is unknown, because youth leagues can be mixed, and
+  nothing is ever "male". The leagues list has a sex label (`MIXTA`,
+  `MASCULINA`, `FEMENINA`, or null for most cups). It is stored raw as
+  `sidgadSex`; "FEMENINA" is read like a name containing "Femenina", and
+  "MASCULINA" is ignored. "Femení" and "Femenino" (other forms of the same
+  word) count too. In 2026/2027 every female-labelled league also had a FEM
+  category or "Femenina"/"Femení" in its name, except MINIFEM (a FEM category).
+  Leagues, groups, categories and teams carry `gender` with
+  `genderSource: "inferred"`; clubs are not gendered.
 - **Results in the calendar.** Calendar games carry `result` ("3:2", empty
   until played). Not used yet; it could tell the sync when an acta is likely
   available and save `NO FILE` retries.
 
 ## Open questions
 
-- Is there a SIDGAD endpoint for leagues/competitions, clubs or team rosters?
-  Find it from the portal's own requests before scraping anything.
+- Rosters: `stats.rosters` (one request per league) or the `/player/` page for
+  the 0.4 `players` level.
 - **Other modalities:** the SIDGAD path includes a client and a modality
   (`fecapa`/`hp`). Making them options may support other sports. Not verified.

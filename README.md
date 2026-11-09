@@ -22,28 +22,79 @@ des de GitHub:
 npm install github:jmedinafruitos/fecapa-sync
 ```
 
-## Sincronització (0.2)
+## Del nom d'un club als seus partits (0.3)
 
-Crea `fecapa-sync.config.json` (o executa `npx fecapa-sync init`, que en crea
-una plantilla si no existeix):
+No cal saber cap número. Executa `npx fecapa-sync init`: si no hi ha
+configuració, en crea una plantilla:
 
 ```json
 {
   "season": "2026/2027",
   "dataDir": "./fecapa-data",
-  "scope": { "leagues": [4811], "teams": [] },
-  "levels": { "games": true, "actas": true },
-  "refresh": { "games": "24h", "actas": "12h" },
+  "scope": { "clubs": ["<club name>"], "categories": ["Benjamí"] },
+  "levels": { "games": true, "actas": false },
+  "refresh": { "games": "24h" },
   "limits": { "maxRequestsPerRun": 200, "delayMs": 1000 },
   "token": null
 }
 ```
 
-- `scope.leagues`: els números de competició (el paràmetre `liga` de l'URL del
-  portal). `scope.teams`: ids d'equip opcionals per quedar-te només amb els
-  partits d'aquests equips.
-- `levels`: en aquesta versió només `games` i `actas` (`actas` activa `games`).
-  Els altres nivells arriben a la 0.3/0.4 i ara donen un error explicatiu.
+1. Busca el nom del teu club (2 o 3 peticions, no escriu res):
+
+   ```bash
+   npx fecapa-sync find "exemple" --live
+   # Clubs:
+   #   9001  EXEMPLE, C.P.  (teams: CP EXEMPLE)  5 teams: Benjamí, Sènior, FEM11
+   ```
+
+2. Posa'l a `scope.clubs` (nom o id), per exemple `"clubs": ["CP Exemple"]`.
+   `scope.categories` és opcional: sense, tens totes les categories del club.
+3. Executa `npx fecapa-sync init`. La llibreria descarrega la llista de lligues
+   (amb els equips i els clubs) i la de clubs, resol els noms i només baixa els
+   calendaris de les lligues del club en aquestes categories, i només en desa
+   els partits dels seus equips.
+4. Programa `npx fecapa-sync sync` al cron (vegeu més avall).
+
+Si un nom coincideix amb més d'un club o amb cap, la sincronització s'atura
+amb codi 2 i et mostra els candidats més semblants, sense fer cap més petició.
+Les dades descobertes es guarden igualment: `npx fecapa-sync clubs` les llista.
+
+Comandes de consulta (llegeixen la còpia local; `--live` pregunta a SIDGAD;
+totes accepten `--json`):
+
+```bash
+npx fecapa-sync leagues    [--category Benjamí]
+npx fecapa-sync categories
+npx fecapa-sync clubs
+npx fecapa-sync teams      [--club "CP Exemple"] [--category Aleví] [--league 4811]
+npx fecapa-sync find "<text>"
+```
+
+Les categories es normalitzen sense tenir en compte accents, majúscules ni
+català/castellà (Aleví/Alevín, Benjamí/Benjamín…): Prebenjamí, Benjamí, Aleví,
+Infantil, Juvenil, Júnior, Sènior, Veterans i les femenines Minifem, FEM11,
+FEM13, FEM15, FEM17 i FEM19. Les que no es reconeixen queden com a `unknown`
+amb el nom original. La FECAPA no té camp de gènere: un equip d'una categoria
+FEM o d'una lliga o grup que diu «Femenina» és `female`; la resta, `unknown`
+(mai «masculí», perquè hi ha lligues mixtes).
+
+## Sincronització
+
+Altres àmbits possibles a `scope`:
+
+- `clubs`: noms o ids de club. `categories`: noms o claus de categoria.
+- `leagues`: números de competició (el paràmetre `liga` de l'URL del portal),
+  o `"all"` per a tota la federació (només amb el calendari setmanal i els
+  mínims per defecte).
+- `teams`: ids d'equip per quedar-te només amb els partits d'aquests equips.
+
+Els filtres es combinen: club + categoria són les lligues d'aquest club en
+aquesta categoria. Amb `leagues` numèriques i sense noms, no cal cap nivell
+de descoberta (com a la 0.2).
+
+- `levels`: `leagues`, `categories`, `teams`, `clubs`, `games` i `actas`
+  (`actas` activa `games`; un àmbit per club o categoria activa els nivells
+  que necessita). `players` arriba a la 0.4.
 - `token`: millor a la variable d'entorn `FECAPA_SIDGAD_TOKEN`. Sense token es
   fa servir la configuració pública del portal. No publiquis mai un token.
 
@@ -61,21 +112,29 @@ del cap de setmana, dijous pels canvis de calendari):
 ```
 
 `sync` surt amb codi 1 si la sincronització falla, 2 si la configuració és
-incorrecta, i 0 en els altres casos (també si no hi havia res pendent, si s'ha
-acabat el pressupost de peticions o si està en pausa per errors).
+incorrecta (també un nom de club o categoria ambigu), i 0 en els altres casos
+(també si no hi havia res pendent, si s'ha acabat el pressupost de peticions o
+si està en pausa per errors).
 
 Des del codi:
 
 ```ts
-import { createSync } from "fecapa-sync";
+import { createSync, discover } from "fecapa-sync";
+
+// Abans del primer init, per triar l'àmbit (2-3 peticions, no escriu res):
+const live = await discover();
+console.log(live.findClub("exemple").map((club) => `${club.id} ${club.name}`));
 
 const sync = createSync({ configPath: "./fecapa-sync.config.json" });
 const result = await sync.run();
-console.log(result.status, result.requests, result.changes.games.updated);
+console.log(result.status, result.requests, result.changes.games.updated, result.changes.teams.created);
+console.log(await sync.listTeams({ club: "CP Exemple", category: "Benjamí" }));
 ```
 
-Les dades queden a `fecapa-data/2026-2027/games/<liga>.json` i
-`fecapa-data/2026-2027/actas/<partit>.json`. La FECAPA no marca mai un partit
+Les dades queden a `fecapa-data/2026-2027/`: `leagues.json`,
+`categories.json`, `teams.json` i `clubs.json` (pels ids de la federació, amb
+`firstSeenAt`/`updatedAt`, i `removedAt` si desapareixen),
+`games/<liga>.json` i `actas/<partit>.json`. La FECAPA no marca mai un partit
 com a ajornat o suspès: cada partit guarda la data, hora i pista actuals, un
 historial (`history`) dels valors anteriors i `rescheduled`. Un partit que
 desapareix del calendari es conserva amb `removedAt`. Cada acta té les dues
@@ -88,10 +147,16 @@ menors: no les republiquis.
 |---|---|---|
 | `refresh.games` (per competició) | 24h | 12h |
 | `refresh.actas` (primer reintent d'una acta no disponible) | 12h | 6h |
+| `refresh.leagues` / `refresh.teams` | 7d | 24h |
+| `refresh.categories` / `refresh.clubs` | 30d | 7d |
 | `limits.delayMs` | 1000 ms | 1000 ms |
 | `limits.maxRequestsPerRun` | 200 | 5 |
 
-Els valors per sota del mínim s'apugen al mínim. Una acta es demana 3 hores
+Els valors per sota del mínim s'apugen al mínim. Lligues, categories i equips
+surten d'una sola petició (la llista de lligues) i els noms de club d'una
+altra: un `init` per a un club costa 2 peticions més una per calendari de les
+seves lligues; per a tota la federació, 2 més una per lliga (58 la temporada
+2026/2027), sense comptar les actes. Una acta es demana 3 hores
 després de l'inici del partit; si encara no hi és, es torna a provar al cap de
 12h, 24h, 48h, 96h i 7 dies, i després de 6 intents es deixa fins que el
 partit canviï de data o d'hora. Una acta final no es torna a demanar mai. Un error
@@ -126,8 +191,11 @@ try {
 ```
 
 `getReport(matchId, { idc, side })` retorna només un dels dos equips.
-Utilitats pures: `toStartsAt`, `currentSeason`, `sameFixture`, `matchPlayer`,
-`normalizePlayerName`.
+`getLeagues()` retorna totes les competicions de totes les temporades amb els
+equips i els ids de club (una petició), i `getClubs()` els noms oficials dels
+clubs. Utilitats pures: `toStartsAt`, `currentSeason`, `sameFixture`,
+`matchPlayer`, `normalizePlayerName`, `categoryOf`, `normalizeCategory`,
+`inferGender`.
 
 ### Bon veí
 
@@ -146,13 +214,35 @@ reports ("actes").
 not on npm yet. Install it from GitHub (`npm install github:jmedinafruitos/fecapa-sync`,
 Node.js ≥ 20.19).
 
-**Sync (0.2).** Write `fecapa-sync.config.json` as in the Catalan example above
-(`scope.leagues` are the portal's `liga` ids; `scope.teams` optionally keeps
-only some teams' games; levels `games` and `actas`), then run
-`npx fecapa-sync init` once and `npx fecapa-sync sync` from cron once or twice a
-week, e.g. `0 3 * * 1,4`. In code: `createSync({ configPath })` or
-`createSync(configObject)` returns `init()`, `run()` and `status()`; every run
-returns a changeset. A second run with nothing due makes no request. The
+**From a club name to its games (0.3).** No ids needed. `npx fecapa-sync init`
+writes a template with `"scope": { "clubs": ["<club name>"], "categories": ["Benjamí"] }`.
+Look your club up with `npx fecapa-sync find "<text>" --live` (2–3 requests,
+nothing written), put its name or id in `scope.clubs`, keep or drop
+`scope.categories`, and run `npx fecapa-sync init`. The library fetches the
+league list (with teams and club ids) and the club list, resolves the names,
+then fetches only the calendars of that club's leagues in those categories and
+keeps only its teams' games. A name that matches several clubs or none stops
+the run (exit 2) with the closest candidates and no further request. The
+discovered data is stored anyway, so `fecapa-sync leagues|categories|clubs|teams
+[--club …] [--category …]|find <query>` (all with `--json`, reading the local
+store) can help you choose. Categories are matched ignoring accents and case,
+in Catalan or Spanish (Aleví/Alevín…); unknown ones are kept as `unknown` with
+their raw name. FECAPA has no gender field: a `FEM…` category or a league or
+group named "Femenina" is `female`, everything else `unknown`, never male.
+
+**Sync.** Other scopes: `scope.leagues` (the portal's `liga` ids, or `"all"` for
+the whole federation), `scope.teams` (team ids). Filters intersect. Levels:
+`leagues`, `categories`, `teams`, `clubs`, `games`, `actas` (`players` in 0.4).
+Then run `npx fecapa-sync sync` from cron once or twice a week, e.g.
+`0 3 * * 1,4`. In code: `createSync({ configPath })` or `createSync(configObject)`
+returns `init()`, `run()`, `status()` and `listLeagues()`, `listCategories()`,
+`listTeams({ league?, club?, category? })`, `listClubs()`, `findClub(query)`,
+`findTeam(query)` over the local store; `discover()` lists a season live. Every
+run returns a changeset covering every level. A run with nothing due makes no
+request. Leagues, categories and teams share one request (refreshed every 7d by
+default, floor 24h; categories 30d, floor 7d); club names one more (30d, floor
+7d). `init` for one club costs 2 requests plus one per calendar of its leagues;
+federation-wide, 2 plus one per league (58 in 2026/2027), actas aside. The
 library enforces floors: games are refreshed at most every 12h (default 24h),
 an unavailable acta is retried after 12h (minimum 6h), 24h, 48h, 96h and 7d,
 then given up after 6 attempts until the game is rescheduled; a final acta is
@@ -161,12 +251,15 @@ never refetched; 1 s between requests; at most `maxRequestsPerRun` requests
 stops the run without touching the data and backs off for 1 h, doubling up to
 7 days. FECAPA never marks a game as postponed or cancelled, so games keep a
 `history` of previous date/time/venue values, a `rescheduled` flag and
-`removedAt` when they leave the calendar. Actas hold both lineups with
-`isGoalkeeper`. `sync` exits 1 on failure and 2 on a config error.
+`removedAt` when they leave the calendar; leagues, teams and clubs get
+`removedAt` too. Actas hold both lineups with `isGoalkeeper`. `sync` exits 1
+on failure and 2 on a config error.
 
 **Client.** `createClient(options)` returns `getCalendar(idc)`,
 `getReport(matchId, { idc, side, expectTeams? })` and
-`getFullReport(matchId, { idc, expectTeams? })`. Report results carry a
+`getFullReport(matchId, { idc, expectTeams? })`, plus `getLeagues()` (every
+league of every season with teams and club ids, one request) and `getClubs()`
+(official club names). Report results carry a
 `status` (`final`, `not-finished`, or `no-file` when SIDGAD has no acta yet).
 Each call reports which data source answered: the SIDGAD JSON API with your own
 token (`sidgad-api`), the public config embedded in the portal page
