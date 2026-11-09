@@ -293,7 +293,7 @@ function formatCapture(result: CaptureResult): string {
   const { counts } = result;
   const lines = [
     `fecapa-sync capture: ${result.kind} → ${result.file} (${result.bytes} bytes, ${result.requests} request${result.requests === 1 ? "" : "s"} via ${result.source})`,
-    `  anonymised: ${counts.people} people, ${counts.players} person ids${result.keepTeams ? "; teams and clubs kept (--keep-teams: local debugging only, don't commit)" : `, ${counts.teams} teams, ${counts.clubs} clubs, ${counts.venues} venues`}`,
+    `  anonymised: ${counts.people} people, ${counts.players} person ids${result.keepTeams ? "; teams and clubs kept (--keep-teams: local debugging only, don't commit)" : `, ${counts.teams} teams, ${counts.clubs} clubs, ${counts.venues} venues`}; ${counts.redacted} unknown text field(s) redacted`,
     result.parse.ok
       ? `  parser: ok (${result.parse.summary})`
       : `  parser: ${result.parse.code}${result.parse.detail ? ` (${result.parse.detail})` : ""}. Add a failing test with this fixture, then fix the parser (CONTRIBUTING.md).`,

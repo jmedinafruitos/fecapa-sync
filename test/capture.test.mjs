@@ -14,6 +14,8 @@ import { tempDir } from './sync-helpers.mjs';
 const PERSON = ['ORIGCOGNOM PRIMER,ORIGNOM', 'ORIGCOGNOM SEGON,ALTRENOM', 'ORIGPORTER TERCER,TERCERNOM', 'ORIGVISITANT,QUARTNOM'];
 const STAFF = 'ORIGENTRENADOR,STAFFNOM';
 const REFEREE = 'ORIGARBITRE REFNOM';
+// Officials SIDGAD lists beside the referees (court and federation delegates, timekeeper).
+const OFFICIALS = { del_pista: '\tORIGDELEGAT PISTA, DELNOM', del_fede: 'ORIGFEDERATIU,FEDNOM', cronometrador: 'ORIGCRONO CRONONOM', ref_aux: '' };
 const TEAM = { home: 'CP ORIGPOBLE B', away: 'CH ORIGCIUTAT' };
 const VENUE = 'PAVELLO ORIGPOBLE';
 
@@ -25,7 +27,9 @@ const player = (id, name, extra = {}) => ({
 const liveReport = () => ({
   game_data: {
     game_id: '345678', season_id: '41', tournament_name: `BENJAMÍ PLATA 1 · ${TEAM.home}`, game_info: '',
-    ref_name1: REFEREE, ref_name2: '', venue_info: VENUE,
+    ref_name1: REFEREE, ref_name2: '', ...OFFICIALS, venue_info: VENUE,
+    // A field nobody listed yet: its text is redacted, whatever it holds.
+    obs_arbitral: 'ORIGOBSERVADA NOTANOM va protestar', home_team_shortName: 'ORIGP', away_team_shortName: 'OCIU',
     home_team_id: '45601', away_team_id: '45602', home_team_name: TEAM.home, away_team_name: TEAM.away,
     home_logo: 'https://sidgad.example/logos/45601.png', away_logo: '',
     period_name: 'FINAL', period: '4', home_team_score: '3', away_team_score: '0',
@@ -83,13 +87,13 @@ const liveLeagues = () => ({
 });
 
 const SAMPLES = { report: liveReport, rosters: liveStats, clubs: liveClubs, calendar: liveCalendar, leagues: liveLeagues };
-const PEOPLE = [...PERSON, STAFF, REFEREE, 'ORIGNOVA,CINQUENOM', 'ORIGATLETA INDIVIDUAL,SISENOM'];
+const PEOPLE = [...PERSON, STAFF, REFEREE, ...Object.values(OFFICIALS).filter(Boolean), 'ORIGNOVA,CINQUENOM', 'ORIGATLETA INDIVIDUAL,SISENOM', 'ORIGOBSERVADA NOTANOM'];
 const PERSON_IDS = ['123456', '123457', '123458', '123459', '123460', '777001'];
 const TEAM_TEXT = [TEAM.home, TEAM.away, 'CP ORIGPOBLE A', 'ORIGPOBLE, C.P.', VENUE, 'ORIGPOBLE', 'ORIGCIUTAT'];
 const TEAM_IDS = ['45601', '45602', '45603', '3001', '3002', '3003'];
 
 // Every name fragment and id, searched in the serialised output: independent of findLeaks.
-const fragments = (names) => names.flatMap((name) => name.split(/[ ,]+/)).filter((part) => part.startsWith('ORIG') || /NOM$/.test(part));
+const fragments = (names) => names.flatMap((name) => name.split(/[\s,]+/)).filter((part) => part.startsWith('ORIG') || /NOM$/.test(part));
 const survivors = (data, values) => values.filter((value) => JSON.stringify(data).includes(value));
 const idSurvivors = (data, ids) => ids.filter((id) => new RegExp(`(?<!\\d)${id}(?!\\d)`).test(JSON.stringify(data)));
 
@@ -129,7 +133,18 @@ test('anonymise is deterministic and the mapping is stable within a file', () =>
   const report = anonymise(liveReport()).data.game_data;
   assert.equal(report.away_roster[0].player_id, report.away_goalies[0].player_id);
   for (const row of report.home_roster) assert.match(row.player_name, /^[^,]+,[^,]+$/);
-  assert.match(report.events[0].text, new RegExp(`${report.home_roster[0].player_id}`));
+  // Officials are people too; text in fields nobody listed is redacted.
+  for (const key of ['del_pista', 'del_fede', 'cronometrador']) assert.match(report[key], /^[A-ZÀ-Ú ]+(,[A-ZÀ-Ú ]+)?$/, key);
+  assert.equal(report.ref_aux, '');
+  assert.deepEqual([report.events[0].text, report.events[0].minute, report.events[1].note, report.obs_arbitral], ['[redacted]', '12', '[redacted]', '[redacted]']);
+  assert.match(report.home_team_shortName, /^EQUIP /);
+});
+
+test('findLeaks reports text of unknown meaning that survived at the same path', () => {
+  const input = { game_data: { obs_nova: 'QUALSEVOL TEXT', period_name: 'FINAL' } };
+  assert.deepEqual(findLeaks(input, input), [{ path: 'game_data.obs_nova', kind: 'unknown-text' }]);
+  assert.deepEqual(anonymise(input).data, { game_data: { obs_nova: '[redacted]', period_name: 'FINAL' } });
+  assert.equal(anonymise(input).counts.redacted, 1);
 });
 
 test('anonymise never touches what the parsers need: dates, times, scores, statuses, roles, match ids, group names', () => {
@@ -221,7 +236,7 @@ test('capture without a token: reads the portal page for the public token, then 
   assert.equal(result.file, path.join(cwd, 'fixtures/sidgad-api/2026-11-report-new.json'));
   assert.doesNotMatch(written, /ORIG|NOM"|123456|45601|public-token/);
   assert.deepEqual(JSON.parse(written), anonymise(liveReport()).data);
-  assert.ok(result.counts.people >= 6 && result.counts.players === 5);
+  assert.ok(result.counts.people >= 9 && result.counts.players === 5 && result.counts.redacted === 3);
 });
 
 test('capture with a token makes exactly one request; a format change is still saved and reported', async () => {

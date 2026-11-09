@@ -10,10 +10,11 @@
  * (dates, times, scores, statuses, roles such as `player_role`, match and
  * competition ids, group names) are never touched.
  *
- * It works on key names, not on one schema, so a new or renamed field that
- * holds a person's name or id is still caught when its name says so; a
- * final sweep replaces any known name or id left in other text fields, and
- * `findLeaks` checks the result.
+ * It works on key names, not on one schema. Text in a field that is neither
+ * mapped (people, teams, clubs, venues) nor known to be safe (`SAFE_TEXT`)
+ * is replaced with `"[redacted]"`: a new or renamed field can't leak a name
+ * just because nobody listed it. A final sweep replaces any known name or
+ * id left in the safe text fields, and `findLeaks` checks the result.
  */
 
 export type AnonymiseOptions = {
@@ -23,12 +24,24 @@ export type AnonymiseOptions = {
   modality?: string;
 };
 
-export type AnonymiseCounts = { players: number; people: number; teams: number; clubs: number; venues: number };
+export type AnonymiseCounts = {
+  /** Distinct person ids replaced (players, staff, referees). */
+  players: number;
+  /** Distinct person names replaced. */
+  people: number;
+  teams: number;
+  clubs: number;
+  venues: number;
+  /** Text fields of unknown meaning replaced with `"[redacted]"`. */
+  redacted: number;
+};
 
 export type AnonymiseResult = { data: unknown; counts: AnonymiseCounts };
 
 /** One value that survived anonymisation. Never contains the value itself, only where it is. */
-export type Leak = { path: string; kind: "person-name" | "player-id" | "team-name" | "team-id" | "club-name" | "club-id" | "venue" };
+export type Leak = { path: string; kind: "person-name" | "player-id" | "team-name" | "team-id" | "club-name" | "club-id" | "venue" | "unknown-text" };
+
+export const REDACTED = "[redacted]";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
@@ -38,16 +51,44 @@ const isPlaceholder = (value: unknown) => value === null || value === undefined 
 // Key classification. Lower-cased key names.
 // Player, staff and referee ids all get invented ids ≥ 900000.
 const PLAYER_ID = /^(player_?id|id_?player|id_jugador|jugador_id|staff_?id|id_?staff|ref(eree)?_?id\d*|id_arbitro\d*)$/;
+// Officials too: referees, court and federation delegates, timekeepers, scorers.
 const PERSON_NAME = (key: string) =>
-  /^(player_name|staff_name|ref_name\d*|referee(_name)?\d*|arbitro\d*|nombre_jugador|jugador|entrenador|delegado|coach(_name)?)$/.test(key)
+  /^(player_name|staff_name|nombre_jugador|jugador|entrenador|coach(_name)?)$/.test(key)
+  || /^(ref|del|arb|crono|cron|anot|aux|jutge|juez|deleg|oficial|official)(_|$|[a-z])/.test(key)
   || (/name|nombre/.test(key) && /player|staff|ref|arbit|jugador|coach|delegad|entrenad|person/.test(key));
 const TEAM_ID = /^(home_id|away_id|home_team_id|away_team_id|team_?id|id_?team|id_equipo|equipo_id)$/;
-const TEAM_NAME = /^(home_name|away_name|home_team_name|away_team_name|team_name|nombre_equipo|name_short|short_name)$/;
+const TEAM_NAME_EXACT = /^(home_name|away_name|team_name|nombre_equipo|name_short|short_name|shortname)$/;
+const isTeamName = (key: string) => TEAM_NAME_EXACT.test(key) || (/name|nombre/.test(key) && /team|equipo|home|away|local|visit/.test(key));
 const CLUB_ID = /^(home_club_id|away_club_id|club_?id|id_?club)$/;
-const CLUB_NAME = /^(nameclub|club_name|nombre_club|name_club)$/;
+const CLUB_NAME_EXACT = /^(nameclub|club_name|nombre_club|name_club)$/;
+const CLUB_NAME = { test: (key: string) => CLUB_NAME_EXACT.test(key) || (/name|nombre/.test(key) && /club/.test(key)) };
 const TEAM_ID_LIST = /^(ids_teams|team_ids)$/;
 const VENUE = /^(venue_info|venue|pista|pabellon|pavello)$/;
 const LOGO = /logo|photo|foto|image|imagen/;
+
+/**
+ * Text fields known to identify nobody, kept as they are (and swept for known
+ * names). Everything the parsers read is here. Any other text is redacted.
+ */
+const SAFE_TEXT = new Set([
+  // calendar
+  "idp", "dia_partido", "hora_partido", "result", "home_bonus", "away_bonus",
+  // report
+  "game_id", "season_id", "tournament_name", "game_info", "period_name", "period", "home_team_score", "away_team_score",
+  "home_team_penals", "away_team_penals", "game_date", "game_hour", "game_time", "game_completed", "shootout", "last_update",
+  "player_number", "player_role", "player_categ", "player_flag", "is_captain", "5i", "goals", "asist", "penals", "direct",
+  "fault_com", "fault_rec", "yellow_card", "blue_card", "red_card", "staff_role", "staff_flag", "staff_yellow", "staff_red", "staff_blue",
+  // stats
+  "order", "played", "goals_porc", "asist_porc", "penals_porc", "direct_porc", "blue_cards", "blue_cards_pg", "red_cards", "red_cards_pg", "role",
+  // leagues and clubs
+  "idc", "nombre_idc", "id_temp", "nombre_temp", "temp", "id_zone", "zone_name", "id_categoria", "nombre_categoria", "id_sexo", "nombre_sexo",
+  "agrupada", "mostrar_pistas", "botones_liga", "default_btn", "modals",
+  // refusals
+  "status",
+]);
+const BOOLEAN_TEXT = /^(true|false|null|undefined|si|sí|no)$/i;
+const isUnknownText = (key: string, value: unknown) =>
+  !SAFE_TEXT.has(key) && typeof value === "string" && !isPlaceholder(value) && /\p{L}/u.test(value) && !BOOLEAN_TEXT.test(value.trim());
 
 // Invented vocabulary: Greek letters, so no output can be mistaken for a real club, town or surname.
 const GREEK = ["ALFA", "BETA", "GAMMA", "DELTA", "ÈPSILON", "ZETA", "ETA", "THETA", "IOTA", "KAPPA",
@@ -139,6 +180,7 @@ class Anonymiser {
   readonly teamBases = new Indexer();
   readonly clubNames = new Indexer();
   readonly venues = new Indexer();
+  redacted = 0;
   /** Original text (normalised) → replacement, for the free-text sweep. */
   readonly names = new Map<string, string>();
   readonly keepTeams: boolean;
@@ -233,9 +275,13 @@ class Anonymiser {
     if (TEAM_ID.test(k)) return this.teamId(value);
     if (CLUB_ID.test(k)) return this.clubId(value);
     if (TEAM_ID_LIST.test(k)) return this.teamIdList(value);
-    if (TEAM_NAME.test(k) || (k === "name" && /^teams?$/i.test(parent))) return this.teamName(value);
     if (CLUB_NAME.test(k) || (k === "name" && /^club(es|s)?$/i.test(parent))) return this.clubName(value);
+    if (isTeamName(k) || (k === "name" && /^teams?$/i.test(parent))) return this.teamName(value);
     if (VENUE.test(k)) return this.venue(value);
+    if (isUnknownText(k, value)) {
+      this.redacted++;
+      return REDACTED;
+    }
     return value;
   }
 
@@ -289,6 +335,7 @@ export function anonymise(input: unknown, options: AnonymiseOptions = {}): Anony
       teams: anonymiser.keepTeams ? 0 : anonymiser.teamBases.map.size,
       clubs: anonymiser.keepTeams ? 0 : anonymiser.clubs.map.size + anonymiser.clubNames.map.size,
       venues: anonymiser.venues.map.size,
+      redacted: anonymiser.redacted,
     },
   };
 }
@@ -296,6 +343,8 @@ export function anonymise(input: unknown, options: AnonymiseOptions = {}): Anony
 type Sensitive = {
   names: Array<{ text: string; kind: Leak["kind"] }>;
   ids: Map<string, Leak["kind"]>;
+  /** Text of unknown meaning, by path: it must not be in the output at the same path. */
+  unknown: Map<string, string>;
 };
 
 function collectSensitive(value: Json, options: AnonymiseOptions, into: Sensitive, path: Path = [], ctx: Context = { separator: false, personRow: false }): void {
@@ -317,16 +366,20 @@ function collectSensitive(value: Json, options: AnonymiseOptions, into: Sensitiv
   const addId = (kind: Leak["kind"]) => {
     if (!isPlaceholder(value) && /^\d+$/.test(String(value).trim())) into.ids.set(String(Number(String(value).trim())), kind);
   };
+  const teamField = TEAM_ID.test(key) || CLUB_ID.test(key) || TEAM_ID_LIST.test(key) || VENUE.test(key) || CLUB_NAME.test(key)
+    || isTeamName(key) || (key === "name" && /^(teams?|club(es|s)?)$/i.test(parent));
   if (PLAYER_ID.test(key)) addId("player-id");
   else if (PERSON_NAME(key) || (ctx.personRow && CLUB_NAME.test(key))) addName("person-name");
   else if (ctx.personRow && CLUB_ID.test(key)) addId("club-id");
-  else if (options.keepTeams) return;
+  else if (LOGO.test(key)) return;
   else if (ctx.separator && (key === "home_name" || key === "away_name")) return;
+  else if (options.keepTeams && teamField) return;
   else if (TEAM_ID.test(key)) addId("team-id");
   else if (CLUB_ID.test(key)) addId("club-id");
-  else if (TEAM_NAME.test(key) || (key === "name" && /^teams?$/i.test(parent))) addName("team-name");
   else if (CLUB_NAME.test(key) || (key === "name" && /^club(es|s)?$/i.test(parent))) addName("club-name");
+  else if (isTeamName(key) || (key === "name" && /^teams?$/i.test(parent))) addName("team-name");
   else if (VENUE.test(key)) addName("venue");
+  else if (isUnknownText(key, value)) into.unknown.set(pathText(path), norm(value as string));
 }
 
 /**
@@ -336,7 +389,7 @@ function collectSensitive(value: Json, options: AnonymiseOptions, into: Sensitiv
  * and kinds only, never the values.
  */
 export function findLeaks(input: unknown, output: unknown, options: AnonymiseOptions = {}): Leak[] {
-  const sensitive: Sensitive = { names: [], ids: new Map() };
+  const sensitive: Sensitive = { names: [], ids: new Map(), unknown: new Map() };
   collectSensitive(JSON.parse(JSON.stringify(input ?? null)) as Json, options, sensitive);
   const leaks: Leak[] = [];
   const visit = (value: Json, path: Path) => {
@@ -345,6 +398,7 @@ export function findLeaks(input: unknown, output: unknown, options: AnonymiseOpt
     const key = String(path[path.length - 1] ?? "").toLowerCase();
     if (typeof value === "string") {
       const text = norm(value);
+      if (sensitive.unknown.get(pathText(path)) === text) leaks.push({ path: pathText(path), kind: "unknown-text" });
       for (const name of sensitive.names) if (text.includes(name.text)) leaks.push({ path: pathText(path), kind: name.kind });
       if (/\p{L}/u.test(value)) {
         for (const token of value.match(/\d{4,}/g) ?? []) {
