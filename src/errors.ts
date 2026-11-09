@@ -27,12 +27,14 @@ export const ErrorCode = {
   ALL_SOURCES_FAILED: "ALL_SOURCES_FAILED",
   /** No configured source could run (e.g. only `sidgad-api` and no token). */
   NO_SOURCE_AVAILABLE: "NO_SOURCE_AVAILABLE",
-  /** A caller passed an invalid argument. Context: `argument`. */
+  /** A caller passed an invalid argument, e.g. a club name that matches several clubs. Context: `argument` or `detail`, `candidates`. */
   INVALID_ARGUMENT: "INVALID_ARGUMENT",
-  /** The sync configuration is invalid or asks for something not available yet. Context: `detail`. */
+  /** The sync configuration is invalid, asks for something not available yet, or names a club/category that matches nothing or several things. Context: `detail`, `candidates`. */
   INVALID_CONFIG: "INVALID_CONFIG",
   /** A file in the local store can't be read as what it should be. Context: `detail` (the path). */
   STORE_CORRUPT: "STORE_CORRUPT",
+  /** The local store doesn't have the data asked for yet (e.g. no leagues before the first `init`). Context: `detail` (the level). */
+  STORE_EMPTY: "STORE_EMPTY",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -48,6 +50,8 @@ export type FecapaErrorContext = {
   fecapaId?: number;
   argument?: string;
   attempts?: SourceAttempt[];
+  /** Names closest to an ambiguous or unmatched query, best first. */
+  candidates?: string[];
   /** Free-form detail, e.g. which field failed validation. Not stable. */
   detail?: string;
 };
@@ -62,6 +66,7 @@ export class FecapaError extends Error {
   declare readonly fecapaId?: number;
   declare readonly argument?: string;
   declare readonly attempts?: SourceAttempt[];
+  declare readonly candidates?: string[];
   declare readonly detail?: string;
 
   constructor(code: ErrorCode, message: string, context: FecapaErrorContext = {}, options?: { cause?: unknown }) {

@@ -51,10 +51,10 @@ test('init without a config file writes a template and makes no request', async 
 
 test('an invalid config exits 2 with a clear message', async () => {
   const dir = tempDir();
-  const file = writeConfig(dir, { scope: { leagues: [4811] }, levels: { games: true, teams: true } });
+  const file = writeConfig(dir, { scope: { leagues: [4811] }, levels: { games: true, players: true } });
   const result = await run(['sync', '--config', file]);
   assert.equal(result.code, 2);
-  assert.match(result.stderr, /"teams" \(0\.3\)/);
+  assert.match(result.stderr, /"players" \(0\.4\)/);
 });
 
 test('status reads the local store and exits 0', async () => {

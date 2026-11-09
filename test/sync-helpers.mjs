@@ -28,7 +28,12 @@ const spanish = (date) => (date ? `${date.slice(8, 10)}/${date.slice(5, 7)}/${da
  * A SIDGAD calendar body. Every identity is invented. `games` entries:
  * `{ id, date, time?, home, away, venue? }` with team ids from TEAMS.
  */
-export const TEAMS = { 900101: 'CP PROVA B', 900102: 'CH FICTICI', 900103: 'CLUB IMAGINARI', 900104: 'PATIN INVENTAT' };
+export const TEAMS = {
+  900101: 'CP PROVA B', 900102: 'CH FICTICI', 900103: 'CLUB IMAGINARI', 900104: 'PATIN INVENTAT',
+  900105: 'CP PROVA A', 900106: 'CH FICTICI B', 900107: 'CP PROVA', 900108: 'CLUB IMAGINARI FEM', 900109: 'CP PROVA',
+  900110: 'CLUB IMAGINARI', 900111: 'CP PROVA SANTS', 900112: 'CP PROVA', 900113: 'CH FICTICI', 900114: 'SELECCIÓ INVENTADA M',
+  900115: 'CH FICTICI', 900116: 'SELECCIO INVENTADA F',
+};
 
 export function calendarBody(games, { phaseId = 4951, phaseName = 'LLIGA PROVA 1' } = {}) {
   const separator = (dia, hora, name) => ({ idp: '0', dia_partido: dia, hora_partido: hora, home_name: name, away_name: '--', home_id: null, away_id: null, pista: null });
@@ -67,9 +72,10 @@ export function reportBody(id, { home = 900101, away = 900102 } = {}) {
 /**
  * A fake SIDGAD API. `calendars[idc]` is a calendar body (or a function
  * returning a Response/body); `reports[id]` likewise. Unknown reports answer
- * NO FILE, like SIDGAD does. Every request is counted in `calls`.
+ * NO FILE, like SIDGAD does. `leagues` and `clubs` answer the list endpoints.
+ * Every request is counted in `calls`.
  */
-export function fakeApi({ calendars = {}, reports = {} } = {}) {
+export function fakeApi({ calendars = {}, reports = {}, leagues, clubs } = {}) {
   const calls = [];
   const answer = async (value) => {
     const resolved = await (typeof value === 'function' ? value() : value);
@@ -84,9 +90,12 @@ export function fakeApi({ calendars = {}, reports = {} } = {}) {
       return answer(calendars[id]);
     }
     if (parsed.pathname.endsWith('/report/')) return answer(id in reports ? reports[id] : { status: 'NO FILE' });
+    if (parsed.pathname.endsWith('/leagues/') && api.leagues !== undefined) return answer(api.leagues);
+    if (parsed.pathname.endsWith('/clubs/') && api.clubs !== undefined) return answer(api.clubs);
     throw new Error(`Unexpected request in test: ${url}`);
   };
-  return { fetch, calls, calendars, reports };
+  const api = { fetch, calls, calendars, reports, leagues, clubs };
+  return api;
 }
 
 /** A sync over a temp store with the token source only (1 request per operation) and no real waiting. */
@@ -116,3 +125,6 @@ export function snapshot(dir) {
   walk(dir);
   return out;
 }
+
+/** `calendar:4811`, `leagues:`, … for each request made. */
+export const callNames = (calls) => calls.map((url) => `${new URL(url).pathname.split('/').at(-2)}:${new URL(url).searchParams.get('id') ?? ''}`);

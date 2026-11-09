@@ -4,24 +4,26 @@ import { z } from "zod";
 import { FecapaError } from "../errors.js";
 import { currentSeason } from "../time.js";
 import { DAY_MS, formatDuration, HOUR_MS, parseDuration } from "./duration.js";
+import { scopeNeedsDirectory, type ScopeInput } from "./resolve.js";
 
 export const LEVELS = ["leagues", "categories", "teams", "clubs", "games", "actas", "players"] as const;
 export type Level = (typeof LEVELS)[number];
 
 /** Levels this version can sync. */
-export const AVAILABLE_LEVELS = ["games", "actas"] as const;
+export const AVAILABLE_LEVELS = ["leagues", "categories", "teams", "clubs", "games", "actas"] as const;
 export type AvailableLevel = (typeof AVAILABLE_LEVELS)[number];
 
 /** The milestone in which each level that isn't available yet is planned. */
-export const PLANNED_IN: Partial<Record<Level, string>> = {
-  leagues: "0.3", categories: "0.3", teams: "0.3", clubs: "0.3", players: "0.4",
-};
+export const PLANNED_IN: Partial<Record<Level, string>> = { players: "0.4" };
 
 /**
- * Levels each level needs. `games` also needs leagues; in 0.2 they come from
- * the explicit `scope.leagues` ids, so the `leagues` level isn't required.
+ * Levels each level needs. `games` needs leagues only when the scope names
+ * clubs or categories (or all leagues); explicit `scope.leagues` ids work
+ * without the `leagues` level.
  */
-export const DEPENDS_ON: Partial<Record<Level, Level[]>> = { actas: ["games"], players: ["actas"] };
+export const DEPENDS_ON: Partial<Record<Level, Level[]>> = {
+  categories: ["leagues"], teams: ["leagues"], clubs: ["teams"], actas: ["games"], players: ["actas"],
+};
 
 /**
  * Minimum refresh interval per level, enforced by the library: a configured
@@ -59,13 +61,15 @@ export const configSchema = z.object({
   /** Where the local store lives. Relative to the config file, or to the working directory for an in-code config. */
   dataDir: z.string().min(1).optional(),
   scope: z.object({
-    /** Competition ids (`liga` in the portal URL). Required in 0.2. */
-    leagues: z.array(positiveId).min(1, "list at least one league id (scope.leagues)"),
+    /** Competition ids (`liga` in the portal URL), or `"all"` for every league of the season. */
+    leagues: z.array(positiveId).min(1, 'list at least one league id, or "all" (scope.leagues)').optional(),
     /** Team ids. When set, only games involving one of these teams are kept. */
     teams: z.array(positiveId).optional(),
-    categories: z.array(z.string()).optional(),
-    clubs: z.array(z.union([z.string(), positiveId])).optional(),
-  }).strict(),
+    /** Category names or keys (`"Benjamí"`, `"alevin"`, `"FEM13"`…). Only leagues of these categories. */
+    categories: z.array(z.string().trim().min(1)).optional(),
+    /** Club names or federation club ids. Only these clubs' leagues, and only games involving their teams. */
+    clubs: z.array(z.union([z.string().trim().min(1), positiveId])).optional(),
+  }).strict().optional(),
   levels: levelFlags.optional(),
   refresh: refreshValues.optional(),
   limits: z.object({
@@ -76,8 +80,12 @@ export const configSchema = z.object({
   token: z.string().min(1).nullable().optional(),
 }).strict();
 
+type SchemaInput = z.input<typeof configSchema>;
+
 /** The config file / object, as written by the user. */
-export type SyncConfig = z.input<typeof configSchema>;
+export type SyncConfig = Omit<SchemaInput, "scope"> & {
+  scope?: Omit<NonNullable<SchemaInput["scope"]>, "leagues"> & { leagues?: number[] | "all" };
+};
 
 /** The config after validation, defaults, floors and dependencies. */
 export type ResolvedConfig = {
@@ -86,8 +94,11 @@ export type ResolvedConfig = {
   seasonDir: string;
   /** Absolute path of the store root. */
   dataDir: string;
+  /** Explicit league ids from `scope.leagues` (empty for `"all"` or none). */
   leagues: number[];
   teams: number[];
+  /** The scope as configured; names are resolved against the discovered levels at run time. */
+  scope: ScopeInput;
   levels: Record<AvailableLevel, boolean>;
   /** Effective refresh intervals, in ms. */
   refreshMs: Record<AvailableLevel, number>;
@@ -102,8 +113,15 @@ function invalid(message: string, detail?: string): FecapaError {
   return new FecapaError("INVALID_CONFIG", `Invalid fecapa-sync config: ${message}`, detail ? { detail } : {});
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
+const PLACEHOLDER = /<[^>]*>/;
+
 export function resolveConfig(input: unknown, options: { baseDir?: string; now?: Date; env?: Record<string, string | undefined> } = {}): ResolvedConfig {
-  const parsed = configSchema.safeParse(input);
+  // `scope.leagues: "all"` is taken out before validation so that a bad id
+  // still reports its exact path (`scope.leagues.0`).
+  const allLeagues = isObject(input) && isObject(input.scope) && input.scope.leagues === "all";
+  const parsed = configSchema.safeParse(allLeagues ? { ...input, scope: { ...(input.scope as object), leagues: undefined } } : input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0]!;
     const where = issue.path.join(".") || "(root)";
@@ -116,12 +134,32 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
   const [start, end] = season.split("/").map(Number) as [number, number];
   if (end !== start + 1) throw invalid(`season "${season}" must be two consecutive years`, "season");
 
-  if (config.scope.categories?.length) throw invalid("scope.categories is not available until 0.3; list league ids in scope.leagues", "scope.categories");
-  if (config.scope.clubs?.length) throw invalid("scope.clubs is not available until 0.3; use scope.teams with team ids", "scope.clubs");
+  const scope: ScopeInput = {
+    leagues: allLeagues ? "all" : [...new Set(config.scope?.leagues ?? [])],
+    teams: [...new Set(config.scope?.teams ?? [])],
+    clubs: [...new Set(config.scope?.clubs ?? [])],
+    categories: [...new Set(config.scope?.categories ?? [])],
+  };
 
-  // Turn on what the requested levels depend on.
   const enabled = new Set<Level>(LEVELS.filter((level) => config.levels?.[level] === true));
   if (!config.levels) enabled.add("games");
+
+  // A scope given by names (or all leagues) needs the levels it is resolved against.
+  const needed: Array<[Level, string]> = [];
+  if (scopeNeedsDirectory(scope)) needed.push(["leagues", scope.leagues === "all" ? 'scope.leagues "all"' : "the scope"]);
+  if (scope.categories.length) needed.push(["categories", "scope.categories"]);
+  if (scope.clubs.length) needed.push(["clubs", "scope.clubs"]);
+  if (scope.teams.length && !allLeagues && !scope.leagues.length) needed.push(["teams", "scope.teams without scope.leagues"]);
+  if (enabled.has("games") || enabled.has("actas")) {
+    for (const [level, reason] of needed) {
+      if (enabled.has(level)) continue;
+      if (config.levels?.[level] === false) throw invalid(`${reason} needs levels.${level}, which is set to false`, `levels.${level}`);
+      enabled.add(level);
+      notes.push(`levels.${level} turned on because ${reason} needs it`);
+    }
+  }
+
+  // Turn on what the requested levels depend on.
   for (let changed = true; changed;) {
     changed = false;
     for (const level of [...enabled]) {
@@ -141,6 +179,10 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
     throw invalid(`level ${list} is not available yet in this version; only "games" and "actas" can be synced. Set it to false.`, `levels.${unavailable[0]}`);
   }
   if (!enabled.size) throw invalid('no level is enabled; enable at least "games"', "levels");
+  const hasScope = scope.leagues === "all" || scope.leagues.length > 0 || scope.teams.length > 0 || scope.clubs.length > 0 || scope.categories.length > 0;
+  if (enabled.has("games") && !hasScope) {
+    throw invalid('"games" needs a scope: list scope.clubs, scope.categories, scope.leagues (ids, or "all" for the whole federation) or scope.teams', "scope");
+  }
 
   const refreshMs = {} as Record<AvailableLevel, number>;
   for (const level of LEVELS) {
@@ -162,15 +204,30 @@ export function resolveConfig(input: unknown, options: { baseDir?: string; now?:
     season,
     seasonDir: season.replace("/", "-"),
     dataDir: path.resolve(baseDir, config.dataDir ?? DEFAULT_DATA_DIR),
-    leagues: [...new Set(config.scope.leagues)],
-    teams: [...new Set(config.scope.teams ?? [])],
-    levels: { games: enabled.has("games"), actas: enabled.has("actas") },
+    leagues: scope.leagues === "all" ? [] : scope.leagues,
+    teams: scope.teams,
+    scope,
+    levels: Object.fromEntries(AVAILABLE_LEVELS.map((level) => [level, enabled.has(level)])) as Record<AvailableLevel, boolean>,
     refreshMs,
     maxRequestsPerRun: config.limits?.maxRequestsPerRun ?? DEFAULT_MAX_REQUESTS_PER_RUN,
     delayMs: Math.max(delay, MIN_SYNC_DELAY_MS),
     token: config.token ?? env.FECAPA_SIDGAD_TOKEN ?? null,
     notes,
   };
+}
+
+/**
+ * Fails on a template placeholder such as `"<club name>"` left in the scope.
+ * Checked when a sync starts (before any request), not when the config is
+ * read, so the read-only commands still work with a fresh template.
+ */
+export function checkPlaceholders(scope: ScopeInput): void {
+  for (const field of ["clubs", "categories"] as const) {
+    const placeholder = scope[field].find((value) => typeof value === "string" && PLACEHOLDER.test(value));
+    if (placeholder !== undefined) {
+      throw invalid(`scope.${field}: replace the placeholder "${placeholder}" with a real name. "fecapa-sync find <name> --live" looks it up.`, `scope.${field}`);
+    }
+  }
 }
 
 /** Reads and resolves a JSON config file. `dataDir` is relative to the file. */

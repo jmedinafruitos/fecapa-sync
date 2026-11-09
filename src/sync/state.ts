@@ -11,7 +11,12 @@ export type LeagueState = {
   source: SourceName | null;
 };
 
+/** Last and next sync of one discovery level (`leagues`, `categories`, `teams`, `clubs`). */
+export type LevelState = LeagueState;
+
 export type SeasonState = {
+  /** Discovery levels. Missing in stores written by 0.2. */
+  levels: Partial<Record<"leagues" | "categories" | "teams" | "clubs", LevelState>>;
   games: { leagues: Record<string, LeagueState> };
   actas: { pending: Record<string, PendingActa> };
 };
@@ -68,12 +73,14 @@ export function emptyState(): SyncState {
 }
 
 export function emptySeason(): SeasonState {
-  return { games: { leagues: {} }, actas: { pending: {} } };
+  return { levels: {}, games: { leagues: {} }, actas: { pending: {} } };
 }
 
 export function parseState(input: unknown, file: string): SyncState {
   if (input === null) return emptyState();
   const parsed = stateSchema.safeParse(input);
   if (!parsed.success) throw new FecapaError("STORE_CORRUPT", `${file} doesn't look like a fecapa-sync state file`, { detail: file });
-  return parsed.data as unknown as SyncState;
+  const state = parsed.data as unknown as SyncState;
+  for (const season of Object.values(state.seasons)) season.levels ??= {};
+  return state;
 }
