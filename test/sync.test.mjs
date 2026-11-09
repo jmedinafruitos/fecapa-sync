@@ -369,15 +369,33 @@ test('two overlapping runs: the second is skipped', async () => {
   const clock = fakeClock(NOW);
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
-  const api = fakeApi({ calendars: { 4811: async () => { await gate; return json(calendarBody(BASE_GAMES)); } } });
+  // `reached` resolves once the first run is inside its calendar request, so it
+  // holds the lock: no timer, whatever the machine's speed. Only the first
+  // calendar call waits on the gate; any later one answers at once, so a
+  // regression fails the assertion instead of hanging the test run.
+  let reachedCalendar;
+  const reached = new Promise((resolve) => { reachedCalendar = resolve; });
+  let calendarCalls = 0;
+  const api = fakeApi({
+    calendars: {
+      4811: async () => {
+        if (++calendarCalls === 1) {
+          reachedCalendar();
+          await gate;
+        }
+        return json(calendarBody(BASE_GAMES));
+      },
+    },
+  });
   const dataDir = tempDir();
   const make = () => createSync({ ...CONFIG, levels: { games: true }, token: 't', dataDir }, { fetch: api.fetch, now: clock.now, sleep: async () => {}, env: {}, sources: ['sidgad-api'] });
   const first = make().run();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await reached;
   const second = await make().run();
   assert.equal(second.reason, 'locked');
   release();
   assert.equal((await first).status, 'ok');
+  assert.equal(calendarCalls, 1);
 });
 
 test('a corrupt state file is STORE_CORRUPT, never silently reset', async () => {
