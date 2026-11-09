@@ -4,6 +4,8 @@ import path from "node:path";
 import { CATEGORIES } from "./categories.js";
 import { isFecapaError } from "./errors.js";
 import { DEFAULT_CONFIG_FILE, exampleConfig } from "./sync/config.js";
+import { EXPORT_FORMATS, EXPORT_LEVELS, type ExportFormat, type ExportLevel, type ExportOptions } from "./sync/export.js";
+import { writeTextAtomic } from "./sync/fs.js";
 import { discover } from "./sync/discover.js";
 import type { CategoryRecord, ClubRecord, LeagueRecord, TeamRecord } from "./sync/discovery.js";
 import { createSync, type Changeset, type SyncResult, type SyncStatus } from "./sync/engine.js";
@@ -22,6 +24,11 @@ Discover (read the local store; no network unless --live):
   teams       [--club <name|id>] [--category <name>] [--league <id>]
   find <query>                                   Clubs and teams whose name matches
 
+Export (reads the local store; no network):
+  export      --level games|actas|players|teams|clubs|leagues [--format json|csv|ics]
+              [--team <name|id>] [--club <name|id>] [--category <name>] [--league <name|id>]
+              [--out <file>]                     ICS is for games only. Default format json, to stdout.
+
 Options:
   --config <file>  Config file (default: ${DEFAULT_CONFIG_FILE})
   --json           Print the full result as JSON
@@ -35,6 +42,7 @@ club or category name that matches nothing or several things).`;
 
 const SYNC_COMMANDS = ["init", "sync", "status"];
 const DISCOVER_COMMANDS = ["leagues", "categories", "clubs", "teams", "find"];
+const EXPORT_COMMAND = "export";
 
 type Args = {
   command: string | undefined;
@@ -45,13 +53,19 @@ type Args = {
   verbose: boolean;
   club: string | undefined;
   category: string | undefined;
-  league: number | undefined;
+  /** An id for the discover commands; an id or a name for export. */
+  league: string | undefined;
+  team: string | undefined;
+  level: ExportLevel | undefined;
+  format: ExportFormat;
+  out: string | undefined;
 };
 
 class UsageError extends Error {}
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { command: undefined, query: undefined, config: DEFAULT_CONFIG_FILE, json: false, live: false, verbose: false, club: undefined, category: undefined, league: undefined };
+  const args: Args = { command: undefined, query: undefined, config: DEFAULT_CONFIG_FILE, json: false, live: false, verbose: false, club: undefined, category: undefined, league: undefined,
+    team: undefined, level: undefined, format: "json", out: undefined };
   const value = (i: number, flag: string) => {
     const next = argv[i];
     if (!next || next.startsWith("--")) throw new UsageError(`${flag} needs a value`);
@@ -64,10 +78,17 @@ function parseArgs(argv: string[]): Args {
     if (flag === "--config" || flag === "-c") args.config = take();
     else if (flag === "--club") args.club = take();
     else if (flag === "--category") args.category = take();
-    else if (flag === "--league") {
+    else if (flag === "--league") args.league = take();
+    else if (flag === "--team") args.team = take();
+    else if (flag === "--out" || flag === "-o") args.out = take();
+    else if (flag === "--level") {
       const raw = take();
-      if (!/^\d+$/.test(raw)) throw new UsageError("--league needs a league id");
-      args.league = Number(raw);
+      if (!(EXPORT_LEVELS as readonly string[]).includes(raw)) throw new UsageError(`--level must be one of ${EXPORT_LEVELS.join(", ")}`);
+      args.level = raw as ExportLevel;
+    } else if (flag === "--format") {
+      const raw = take();
+      if (!(EXPORT_FORMATS as readonly string[]).includes(raw)) throw new UsageError(`--format must be one of ${EXPORT_FORMATS.join(", ")}`);
+      args.format = raw as ExportFormat;
     } else if (arg === "--json") args.json = true;
     else if (arg === "--live") args.live = true;
     else if (arg === "--verbose" || arg === "-v") args.verbose = true;
@@ -79,6 +100,11 @@ function parseArgs(argv: string[]): Args {
     else throw new UsageError(`Unexpected argument ${arg}`);
   }
   if (args.command === "find" && !args.query) throw new UsageError("find needs a query, e.g. fecapa-sync find \"<club name>\"");
+  if (args.command !== EXPORT_COMMAND && args.league !== undefined && !/^\d+$/.test(args.league)) throw new UsageError("--league needs a league id");
+  if (args.command === EXPORT_COMMAND) {
+    if (!args.level) throw new UsageError("export needs --level, e.g. fecapa-sync export --level games --format ics --team <id>");
+    if (args.format === "ics" && args.level !== "games") throw new UsageError("--format ics is for --level games only");
+  }
   return args;
 }
 
@@ -177,7 +203,7 @@ async function list(lister: Lister, args: Args): Promise<Listing> {
       teams: await lister.listTeams({
         ...(args.club !== undefined ? { club: /^\d+$/.test(args.club) ? Number(args.club) : args.club } : {}),
         ...(args.category !== undefined ? { category: args.category } : {}),
-        ...(args.league !== undefined ? { league: args.league } : {}),
+        ...(args.league !== undefined ? { league: Number(args.league) } : {}),
       }),
     };
     default: return { clubs: await lister.findClub(args.query!), teams: await lister.findTeam(args.query!) };
@@ -214,7 +240,27 @@ function print(args: Args, listing: Listing, out: (text: string) => void): void 
   out(lines.join("\n"));
 }
 
-async function main(argv: string[], out: (text: string) => void = console.log, err: (text: string) => void = console.error): Promise<number> {
+async function runExport(args: Args, configPath: string, out: (text: string) => void, err: (text: string) => void, write: (text: string) => void): Promise<void> {
+  const filters: Pick<ExportOptions, "team" | "club" | "category" | "league"> = {};
+  for (const key of ["team", "club", "category", "league"] as const) if (args[key] !== undefined) filters[key] = args[key];
+  const result = await createSync({ configPath }).export({ level: args.level!, format: args.format, ...filters });
+  const what = `${result.records} ${args.format === "csv" && args.level === "actas" ? "lineup rows" : args.level}`;
+  const skipped = result.skipped ? ` (${result.skipped} without a date skipped)` : "";
+  const notes = result.notes.filter((note) => !note.endsWith("skipped")).map((note) => `\n  ${note}`).join("");
+  if (args.out) {
+    const file = path.resolve(args.out);
+    await writeTextAtomic(file, result.content);
+    out(`fecapa-sync export: ${what} → ${file}${skipped}${notes}`);
+  } else {
+    write(result.content);
+    err(`fecapa-sync export: ${what}${skipped}${notes}`);
+  }
+}
+
+async function main(
+  argv: string[], out: (text: string) => void = console.log, err: (text: string) => void = console.error,
+  write: (text: string) => void = (text) => process.stdout.write(text),
+): Promise<number> {
   let args: Args;
   try {
     args = parseArgs(argv);
@@ -226,7 +272,7 @@ async function main(argv: string[], out: (text: string) => void = console.log, e
     out(USAGE);
     return 0;
   }
-  if (![...SYNC_COMMANDS, ...DISCOVER_COMMANDS].includes(args.command ?? "")) {
+  if (![...SYNC_COMMANDS, ...DISCOVER_COMMANDS, EXPORT_COMMAND].includes(args.command ?? "")) {
     err(args.command ? `Unknown command "${args.command}"\n\n${USAGE}` : USAGE);
     return 2;
   }
@@ -247,6 +293,10 @@ adjust scope.categories (or remove it for every category), then run "fecapa-sync
   try {
     if (DISCOVER_COMMANDS.includes(args.command!)) {
       await runDiscover(args, configPath, out, err);
+      return 0;
+    }
+    if (args.command === EXPORT_COMMAND) {
+      await runExport(args, configPath, out, err, write);
       return 0;
     }
     const sync = createSync({ configPath });

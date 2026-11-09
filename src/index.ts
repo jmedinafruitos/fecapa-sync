@@ -89,6 +89,19 @@ export {
   type RosterFile,
 } from "./sync/players.js";
 export { discover, type DiscoverOptions, type Discovery } from "./sync/discover.js";
+export {
+  CSV_COLUMNS,
+  EXPORT_FORMATS,
+  EXPORT_LEVELS,
+  exportSnapshot,
+  type ExportFormat,
+  type ExportLevel,
+  type ExportOptions,
+  type ExportResult,
+  type StoreSnapshot,
+} from "./sync/export.js";
+export { csvField, toCsv, type CsvValue } from "./export/csv.js";
+export { escapeText, foldLine, gameUid, gamesToIcs, type IcsGameExtra, type IcsOptions, type IcsResult } from "./export/ics.js";
 export { type DirectoryView, type LeagueFilter, type TeamFilter } from "./sync/directory.js";
 export {
   clubNameFromTeams,

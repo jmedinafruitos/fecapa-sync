@@ -100,6 +100,16 @@ export function resolveClub(query: string | number, clubs: Record<string, ClubRe
   return resolveOne("club", query, active(clubs).map(clubEntry), code, detail);
 }
 
+export function resolveTeam(query: string | number, teams: Record<string, TeamRecord>, code: ErrorCode = "INVALID_ARGUMENT", detail = "team"): TeamRecord {
+  return resolveOne("team", query, active(teams).map(teamEntry), code, detail);
+}
+
+const leagueEntry = (league: LeagueRecord): Named<LeagueRecord> => ({ item: league, id: league.id, label: `${league.name} (${league.id})`, names: [league.name] });
+
+export function resolveLeague(query: string | number, leagues: Record<string, LeagueRecord>, code: ErrorCode = "INVALID_ARGUMENT", detail = "league"): LeagueRecord {
+  return resolveOne("league", query, active(leagues).map(leagueEntry), code, detail);
+}
+
 /** A category key from a name or key (any accent, case, Catalan or Spanish spelling). Must exist in `categories`. */
 export function resolveCategory(query: string, categories: Record<string, CategoryRecord>, code: ErrorCode = "INVALID_ARGUMENT", detail = "category"): CategoryKey {
   const present = active(categories);

@@ -11,6 +11,7 @@ import {
   type CategoryRecord, type ClubRecord, type Directory, type DirectoryLevel, type LeagueRecord, type TeamRecord,
 } from "./discovery.js";
 import { formatDuration } from "./duration.js";
+import { exportSnapshot, type ExportOptions, type ExportResult } from "./export.js";
 import { acquireLock, listFiles, readJson, writeJsonAtomic } from "./fs.js";
 import { inTeamScope, mergeCalendar, type GameRecord, type GamesFile } from "./games.js";
 import { buildPlayers, scrubActa, scrubRoster, storedName, type PlayerRecord, type RosterFile } from "./players.js";
@@ -120,6 +121,12 @@ export type Sync = {
   findClub(query: string | number): Promise<ClubRecord[]>;
   /** Teams matching a name or id, best first (local store). */
   findTeam(query: string | number): Promise<TeamRecord[]>;
+  /**
+   * Exports one level of the local store as JSON, CSV or (games only) ICS,
+   * optionally filtered by team, club, category and/or league (ids or names).
+   * Reads local files only; makes no request.
+   */
+  export(options: ExportOptions): Promise<ExportResult>;
 };
 
 export type CreateSyncOptions = { configPath: string } | SyncConfig;
@@ -676,6 +683,18 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
     }
   }
 
+  async function exportStore(options: ExportOptions): Promise<ExportResult> {
+    const cfg = await config();
+    const files = paths(cfg);
+    const directory = await loadDirectory(cfg);
+    const gamesDir = path.dirname(files.games(0));
+    const leagueIds = (await listFiles(gamesDir)).filter((name) => /^\d+\.json$/.test(name)).map((name) => Number(name.slice(0, -".json".length)));
+    const games = options.level === "games" ? [...(await loadGames(cfg, leagueIds)).values()].flatMap((file) => Object.values(file.games)) : [];
+    const actas = options.level === "games" || options.level === "actas" ? await loadActas(cfg, await storedActas(cfg)) : new Map<string, ActaRecord>();
+    const players = options.level === "players" ? await loadPlayers(cfg) : {};
+    return exportSnapshot({ season: cfg.season, directory, games, actas, players }, options);
+  }
+
   async function view(): Promise<DirectoryView> {
     const cfg = await config();
     return directoryView(await loadDirectory(cfg), cfg.season, STORE_EMPTY_HINT);
@@ -690,6 +709,7 @@ export function createSync(options: CreateSyncOptions, runtime: SyncRuntime = {}
     listClubs: async () => (await view()).listClubs(),
     findClub: async (query) => (await view()).findClub(query),
     findTeam: async (query) => (await view()).findTeam(query),
+    export: exportStore,
     async status() {
       const cfg = await config();
       const files = paths(cfg);
