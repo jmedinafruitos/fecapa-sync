@@ -213,7 +213,9 @@ test('capture without a token: reads the portal page for the public token, then 
   assert.equal(new URL(calls[1].url).searchParams.get('id'), '345678');
   for (const call of calls) assert.equal(call.headers['user-agent'], DEFAULT_USER_AGENT);
   assert.equal(calls[1].headers.origin, PORTAL);
-  assert.ok(sleeps.every((ms) => ms <= 1000) && sleeps.length <= 1);
+  // Two requests, 2 s apart.
+  assert.equal(sleeps.length, 1);
+  assert.ok(sleeps[0] > 1000 && sleeps[0] <= 2000);
   assert.deepEqual(result.parse, { ok: true, summary: 'final report, 3+1 players' });
   const written = readFileSync(result.file, 'utf8');
   assert.equal(result.file, path.join(cwd, 'fixtures/sidgad-api/2026-11-report-new.json'));

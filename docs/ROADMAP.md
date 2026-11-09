@@ -255,7 +255,7 @@ one request). Report results carry a `status`: `final`, `not-finished` or
 | **0.2** ✅ | Sync engine: config file, local JSON store, `state.json`, minimum intervals, request budget, backoff, lock, changesets. Levels `games` and `actas`. CLI `init`/`sync`/`status` | A cron job keeps a team's games and actes up to date; a second run with nothing due makes 0 requests (PR #3) |
 | **0.3** ✅ | `leagues`, `categories`, `teams`, `clubs` from the SIDGAD `leagues`/`clubs` lists; scope by club or category name; discovery API and CLI | A new user can go from a club or category name to synced games without knowing any id |
 | **0.4** ✅ | `players` from actes (+ opt-in per-league rosters), `players.names` privacy option, `export` to JSON/CSV/ICS, quieter cron output | A team's ICS calendar from the README alone |
-| **1.0** | Contributions and release: `capture` (anonymised fixtures), weekly `live-canary` that opens a `source-drift` issue, CONTRIBUTING with a "FECAPA changed" playbook, issue templates, changesets, npm publish | Published on npm; a simulated format change opens an issue |
+| **1.0** ✅ (npm publish pending) | Contributions and release: `capture` (anonymised fixtures), all-fixtures regression test, weekly `live-canary` that opens a `source-drift` issue, CONTRIBUTING with a "FECAPA changed" playbook, issue and PR templates, SECURITY, changesets, release workflow with npm provenance; ICS `SEQUENCE` that never decreases | A simulated format change opens an issue ✅ (`workflow_dispatch` with `simulate_drift`, and offline tests). **Published on npm: waits for the owner's `NPM_TOKEN`** |
 
 ## Principles
 
@@ -384,7 +384,37 @@ competitions only).
   until played). Not used yet; it could tell the sync when an acta is likely
   available and save `NO FILE` retries.
 
+## Contributing and releases (1.0)
+
+- **`capture`** makes one API request (plus the portal page without a token)
+  and saves the answer anonymised: people (players, staff, referees, and the
+  individual athletes in the clubs list) always get invented names and ids
+  ≥ 900000; teams, clubs and venues too unless `--keep-teams` (local
+  debugging only). It works on key names, then sweeps known names and ids out
+  of free text, and refuses to write if `findLeaks` finds anything. Dates,
+  times, scores, statuses, roles, match and competition ids and group names
+  are kept. It writes only inside `fixtures/` unless `--force`.
+- **All fixtures** are parsed on every test run, found by name
+  (`<source>/<yyyy>[-<mm>]-<kind>[-<label>]`), with `fixtures/manifest.json`
+  for exceptions.
+- **`live-canary`** (weekly, Wednesday 04:17 UTC, plus on demand): portal
+  page, leagues, clubs, the current season's largest league's calendar and
+  its latest played game's report; 5 requests at most, 2 s apart, public
+  config only, stops at the first failure. One open issue titled
+  "Live canary: FECAPA source drift" with the `source-drift` label is opened,
+  updated (body + comment) while it fails, and commented on and closed when a
+  run passes. Logs and issues hold codes, sources, statuses and field paths
+  only.
+- **Releases:** changesets; `release.yml` opens the "Version Packages" PR and
+  publishes with provenance when it is merged. Publishing is skipped (with a
+  notice) until the `NPM_TOKEN` secret exists.
+
 ## Open questions
+
+- **First npm publish.** The name `fecapa-sync` was free on npm in November
+  2026. Publishing waits for the owner to add `NPM_TOKEN`.
+- **Canary coverage.** The canary doesn't check `stats`/rosters (about 1 MB)
+  or the `legacy-html` source, to keep its budget small.
 
 - **Player page.** The portal has a player card script
   (`player/sidgad-player-ficha.js`); its endpoint and whether it adds anything

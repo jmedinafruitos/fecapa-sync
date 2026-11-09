@@ -1,6 +1,6 @@
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_API_URL, DEFAULT_BASE_URL, DEFAULT_DELAY_MS, DEFAULT_TIMEOUT_MS } from "../client.js";
+import { DEFAULT_API_URL, DEFAULT_BASE_URL, DEFAULT_TIMEOUT_MS } from "../client.js";
 import { FecapaError, isFecapaError } from "../errors.js";
 import { HttpClient, type FetchLike } from "../http.js";
 import { apiBaseFromConfig, extractSidgadConfig, modalityOf, sidgadUrl } from "../parsers/portal-config.js";
@@ -16,6 +16,9 @@ export type CaptureKind = (typeof CAPTURE_KINDS)[number];
 
 /** Kinds that take a competition id (`calendar`, `rosters`) or a match id (`report`). */
 export const CAPTURE_NEEDS_ID: readonly CaptureKind[] = ["calendar", "report", "rosters"];
+
+/** Pause between the portal page and the API request: 2 s, like the live canary. */
+export const CAPTURE_DELAY_MS = 2000;
 
 const RESOURCE = { calendar: "calendar", report: "report", leagues: "leagues", clubs: "clubs", rosters: "stats" } as const;
 
@@ -35,7 +38,7 @@ export type CaptureOptions = {
   apiUrl?: string;
   fetch?: FetchLike;
   userAgent?: string;
-  /** At least 1000 ms, like the sync. */
+  /** At least (and by default) 2000 ms. */
   delayMs?: number;
   timeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -133,7 +136,7 @@ export async function capture(options: CaptureOptions): Promise<CaptureResult> {
   const http = new HttpClient({
     fetch: fetchImpl,
     userAgent: options.userAgent ?? DEFAULT_USER_AGENT,
-    delayMs: Math.max(DEFAULT_DELAY_MS, options.delayMs ?? DEFAULT_DELAY_MS),
+    delayMs: Math.max(CAPTURE_DELAY_MS, options.delayMs ?? CAPTURE_DELAY_MS),
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     ...(options.sleep ? { sleep: options.sleep } : {}),
   });

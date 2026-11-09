@@ -11,8 +11,10 @@ calendari ICS i les dades a CSV.
 > (tampoc els fitxers CSV o JSON exportats). Si només necessites estadístiques,
 > posa `"players": { "names": "none" }` (o `"initials"`) i no es desarà cap nom.
 
-> **Estat:** pre-1.0. L'API pot canviar entre versions 0.x. Encara no està
-> publicada a npm. Vegeu [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Estat:** 1.0. L'API segueix [semver](https://semver.org/lang/ca/): un canvi
+> incompatible només arriba en una versió major. Vegeu
+> [`docs/ROADMAP.md`](docs/ROADMAP.md) i, per contribuir,
+> [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 > **Sincronitza poc, no sovint.** L'objectiu és una còpia local en JSON: una
 > sincronització completa inicial i després sincronitzacions programades
@@ -22,12 +24,15 @@ calendari ICS i les dades a CSV.
 
 ## Instal·lació
 
-Requereix Node.js 20.19 o superior. Mentre no estigui a npm, es pot instal·lar
-des de GitHub:
+Requereix Node.js 20.19 o superior.
 
 ```bash
-npm install github:jmedinafruitos/fecapa-sync
+npm install fecapa-sync     # com a llibreria
+npx fecapa-sync --help      # o directament la CLI
 ```
+
+Si npm no la troba (la primera publicació depèn del mantenidor), instal·la-la
+des de GitHub: `npm install github:jmedinafruitos/fecapa-sync`.
 
 ## Del nom d'un club als seus partits (0.3)
 
@@ -308,6 +313,24 @@ peticions. No falseja cap navegador. Mai no publiquis un token SIDGAD al codi.
 
 Consulteu també [`docs/HARDENING.md`](docs/HARDENING.md) per a la validació de marcadors i dates i el tractament de refusos.
 
+## Contribuir (1.0)
+
+Si la FECAPA canvia un format, la llibreria falla amb `SOURCE_FORMAT_CHANGED`
+i un canari setmanal obre una incidència `source-drift`. Per arreglar-ho,
+captura una resposta anonimitzada amb una sola petició:
+
+```bash
+npx fecapa-sync capture report <id del partit> --out fixtures/sidgad-api/2027-02-report-exemple.json
+# també: calendar <liga>, leagues, clubs, rosters <liga>
+```
+
+Els noms i ids de jugadors, entrenadors i àrbitres, i també d'equips, clubs i
+pistes, es canvien per valors inventats (ids de persona ≥ 900000); les dates,
+marcadors, estats i rols es conserven. Després: un test que falli, l'arranjament,
+una PR i un changeset. Tot el procediment i les normes (cap dada personal real,
+cap token, límits de peticions, independència de qualsevol club) són a
+[`CONTRIBUTING.md`](CONTRIBUTING.md). Seguretat: [`SECURITY.md`](SECURITY.md).
+
 ## English
 
 Open-source, club-agnostic TypeScript library that keeps a local JSON copy of
@@ -320,9 +343,11 @@ to CSV.
 > own application: **don't republish it**, nor the CSV/JSON exports. If you
 > only need stats, set `"players": { "names": "none" }` (or `"initials"`).
 
-**Status: pre-1.0.** The API may change between 0.x releases, and the package is
-not on npm yet. Install it from GitHub (`npm install github:jmedinafruitos/fecapa-sync`,
-Node.js ≥ 20.19).
+**Status: 1.0.** The API follows semver: breaking changes only in a major
+release. Install from npm (`npm install fecapa-sync`, or run the CLI with
+`npx fecapa-sync`; Node.js ≥ 20.19). If npm doesn't have it yet (the first
+publish is the maintainer's step), install from GitHub:
+`npm install github:jmedinafruitos/fecapa-sync`.
 
 **From a club name to its games (0.3).** No ids needed. `npx fecapa-sync init`
 writes a template with `"scope": { "clubs": ["<club name>"], "categories": ["Benjamí"] }`.
@@ -413,6 +438,17 @@ that order. Errors are `FecapaError`s with a stable `code` (`HTTP_ERROR`,
 `SOURCE_FORMAT_CHANGED`, `TEAMS_MISMATCH`, `INVALID_CONFIG`, …). The client is
 polite: honest User-Agent, one request at a time, a configurable delay between
 requests.
+
+**Contributing.** When FECAPA changes a format the library fails with
+`SOURCE_FORMAT_CHANGED`, and a weekly canary opens a `source-drift` issue.
+`npx fecapa-sync capture <calendar|report|leagues|clubs|rosters> [<id>] --out fixtures/…`
+saves one live answer (one request) as an anonymised fixture: people's names
+and ids, and team, club and venue names and ids, become invented values
+(person ids ≥ 900000), while dates, scores, statuses and roles stay. Then a
+failing test, the fix, a PR and a changeset. The playbook and the rules (no
+real personal data, no tokens, the request limits, club-agnostic) are in
+[`CONTRIBUTING.md`](CONTRIBUTING.md); security reports go through
+[`SECURITY.md`](SECURITY.md).
 
 **Sync rarely, not often.** Syncing everything often can get your IP blocked or
 overload FECAPA's servers for everyone. Actes and players include minors'
